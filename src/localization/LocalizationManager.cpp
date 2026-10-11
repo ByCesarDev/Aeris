@@ -11,6 +11,11 @@ LocalizationManager& LocalizationManager::getInstance() {
     return instance;
 }
 
+void LocalizationManager::clear() {
+    mTranslations.clear();
+    mFallbackTranslations.clear();
+}
+
 static bool loadJsonTranslations(std::filesystem::path const& file, std::unordered_map<std::string, std::string>& out) {
     std::error_code ec;
     if (!std::filesystem::is_regular_file(file, ec)) return false;
@@ -36,8 +41,7 @@ static bool loadJsonTranslations(std::filesystem::path const& file, std::unorder
 
 bool LocalizationManager::load(std::filesystem::path const& langDir, std::string const& languageCode) {
     mCurrentLanguage = languageCode;
-    mTranslations.clear();
-    mFallbackTranslations.clear();
+    clear();
 
     // 1. Siempre cargar inglés como fallback base
     auto enPath = langDir / "en_US.json";
@@ -55,20 +59,35 @@ bool LocalizationManager::load(std::filesystem::path const& langDir, std::string
 std::string LocalizationManager::translate(std::string_view key) const {
     std::string k(key);
 
-    // Buscar en idioma activo
+    // 1. Buscar en idioma activo
     auto it = mTranslations.find(k);
     if (it != mTranslations.end()) {
         return it->second;
     }
 
-    // Fallback a inglés
+    // 2. Fallback a inglés
     auto fallbackIt = mFallbackTranslations.find(k);
     if (fallbackIt != mFallbackTranslations.end()) {
         return fallbackIt->second;
     }
 
-    // Si no existe, devolver la clave tal cual
+    // 3. Clave tal cual si no se encuentra
     return k;
+}
+
+std::string LocalizationManager::format(std::string_view key, std::initializer_list<std::string> args) const {
+    std::string text = translate(key);
+    int index = 0;
+    for (auto const& arg : args) {
+        std::string placeholder = "{" + std::to_string(index) + "}";
+        size_t pos = 0;
+        while ((pos = text.find(placeholder, pos)) != std::string::npos) {
+            text.replace(pos, placeholder.length(), arg);
+            pos += arg.length();
+        }
+        ++index;
+    }
+    return text;
 }
 
 } // namespace aeris

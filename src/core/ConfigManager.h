@@ -2,6 +2,7 @@
 
 #include <filesystem>
 #include <string>
+#include <string_view>
 
 namespace aeris {
 
@@ -37,18 +38,31 @@ class ConfigManager {
 public:
     static ConfigManager& getInstance();
 
+    // Carga de forma transaccional. Si el archivo es inválido o no pasa la validación,
+    // mConfig permanece intacto y la función devuelve false.
     bool load(std::filesystem::path const& configFile);
+
+    // Valida exhaustivamente un objeto Config.
+    static bool validate(Config const& cfg, std::string& outError);
+
+    // Guarda atómicamente la configuración en disco usando archivo temporal y sustitución protegida.
     bool save() const;
 
     Config& config() { return mConfig; }
     Config const& config() const { return mConfig; }
 
     std::filesystem::path const& configPath() const { return mConfigPath; }
+    std::string const& lastError() const { return mLastError; }
+
+    // Reinicia a configuración por defecto
+    void reset();
 
 private:
     ConfigManager() = default;
+
     Config                mConfig;
     std::filesystem::path mConfigPath;
+    std::string           mLastError;
 };
 
 } // namespace aeris

@@ -2,6 +2,7 @@
 
 #include <filesystem>
 
+#include "ll/api/event/ListenerBase.h"
 #include "ll/api/mod/NativeMod.h"
 
 namespace aeris {
@@ -22,7 +23,8 @@ public:
     [[nodiscard]] std::filesystem::path getGeneratedDir() const;
 
 private:
-    ll::mod::NativeMod& mSelf;
+    ll::mod::NativeMod&   mSelf;
+    ll::event::ListenerPtr mCommandListener;
 };
 
 } // namespace aeris

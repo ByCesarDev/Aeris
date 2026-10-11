@@ -102,3 +102,36 @@ Durante la auditoría inicial de las dependencias y la inspección del entorno d
    - Sanitización de rutas antes de descompresión para prevenir vulnerabilidades.
 5. **Estructura Preparada para Rendimiento:**
    - `src/optimization/PerformanceManager.h` como base modular extensible para futuras fases inspiradas en Sodium.
+
+
+---
+
+## 5. Correcciones Aplicadas en la Revisión Inicial de Base (Post-Commit d0b4229)
+
+Tras la primera revisión técnica de la base de Aeris, se aplicaron mejoras y salvaguardas arquitectónicas esenciales:
+
+1. **CompatibilityManager (Detección Real y Fallback Seguro):**
+   - Eliminados los valores optimistas predeterminados (`mDetectedVersion = "1.26.51.01"` y `mGraphicsSwitchSupported = true`).
+   - El estado inicial arranca estrictamente en `Unknown` y con todas las capacidades en `false`.
+   - Se realiza la detección en tiempo de ejecución mediante `ll::getGameVersion()` y `ll::getLoaderVersion()`.
+   - La compatibilidad solo se activa si la versión detectada coincide con `1.26.51.01`.
+
+2. **PerformanceManager (Eliminación de Métricas Simuladas):**
+   - Eliminada la inicialización ficticia de `60.0f` FPS.
+   - El sistema opera en estado `std::nullopt` (`hasMeasurement() == false`) hasta que se procese y acumule una ventana real de al menos 1 segundo de fotogramas del juego.
+
+3. **ConfigManager (Transaccionalidad y Reemplazo Atómico en Windows):**
+   - Implementada carga transaccional: se parsea en un objeto candidato y se valida exhaustivamente (versión de esquema, protección contra *path traversal* en carpetas, validación de idioma `es_ES`/`en_US`, y rangos válidos de backdrop). Si el JSON tiene errores, la configuración anterior permanece 100% intacta.
+   - En Windows, la persistencia utiliza `MoveFileExW` con `MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH` y reintentos, evitando problemas de bloqueo o escrituras parciales.
+
+4. **Internacionalización Integral de Comandos:**
+   - Se añadieron todas las claves de traducción de los subcomandos de `/aeris` tanto a `lang/en_US.json` como a `lang/es_ES.json`.
+   - `LocalizationManager` ahora soporta sustitución posicional de parámetros (`{0}`, `{1}`) vía `format()` y `trFormat()`. Cero texto en inglés hardcodeado en la lógica de comandos.
+
+5. **Ciclo de Vida de LeviLamina:**
+   - La suscripción a `ClientCommandRegisterEvent` se gestiona con `ll::event::ListenerPtr` y se libera explícitamente en `AerisMod::disable()`.
+
+6. **Suite de Pruebas Unitarias (AerisTests):**
+   - Implementada suite en `tests/` (`TestRunner.h`, `ConfigTests.cpp`, `CompatibilityTests.cpp`, `LocalizationTests.cpp`, `PerformanceTests.cpp`, `Main.cpp`).
+   - Integrada en `xmake.lua` bajo el target `AerisTests`.
+   - **Resultado:** 39 pruebas ejecutadas, 39 superadas, 0 fallidas.

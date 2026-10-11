@@ -78,3 +78,24 @@ target("Aeris")
             os.cp(configSrc, path.join(configDst, "config.json"))
         end
     end)
+
+target("AerisTests")
+    set_kind("binary")
+    set_languages("c++20")
+    set_symbols("debug")
+
+    if is_plat("windows") then
+        add_defines("NOMINMAX", "UNICODE")
+        add_cxflags("/utf-8", "/W4")
+    end
+
+    add_packages("nlohmann_json")
+    add_includedirs("src", "tests")
+    add_headerfiles("tests/**.h", "src/**.h")
+    add_files("tests/**.cpp")
+    add_files(
+        "src/core/ConfigManager.cpp",
+        "src/core/CompatibilityManager.cpp",
+        "src/localization/LocalizationManager.cpp",
+        "src/optimization/PerformanceManager.cpp"
+    )

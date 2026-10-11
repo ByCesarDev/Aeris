@@ -43,25 +43,27 @@ bool AerisMod::load() {
     auto& logger = getSelf().getLogger();
     logger.info("Aeris v{} loading...", "0.1.0-alpha");
 
-    // 1. Cargar configuración
+    // 1. Cargar configuración con validación transaccional
     auto configPath = getSelf().getModDir() / "config" / "config.json";
     if (!ConfigManager::getInstance().load(configPath)) {
-        logger.warn("Failed to load config from {}; default settings will be used", configPath.string());
+        logger.warn("Failed to load config from {}: {}; default settings will be used",
+            configPath.string(), ConfigManager::getInstance().lastError());
     }
 
-    // 2. Inicializar localización
+    // 2. Inicializar localización bilingüe
     auto langDir = getSelf().getModDir() / "lang";
     LocalizationManager::getInstance().load(langDir, ConfigManager::getInstance().config().language);
 
-    // 3. Inicializar capa de compatibilidad
+    // 3. Inicializar capa de compatibilidad con detección real de versión
     CompatibilityManager::getInstance().initialize();
 
-    // 4. Inicializar subsistema de rendimiento
+    // 4. Inicializar subsistema de rendimiento (sin métricas simuladas)
     PerformanceManager::getInstance().initialize();
 
-    logger.info("Aeris loaded successfully [Language: {}, Target: {}]",
+    logger.info("Aeris loaded successfully [Language: {}, Detected: {}, Compatible: {}]",
         ConfigManager::getInstance().config().language,
-        CompatibilityManager::getInstance().targetVersion()
+        CompatibilityManager::getInstance().detectedVersion(),
+        CompatibilityManager::getInstance().isVersionCompatible() ? "yes" : "no"
     );
     return true;
 }
@@ -74,8 +76,8 @@ bool AerisMod::enable() {
     static_cast<void>(getPacksDir());
     static_cast<void>(getGeneratedDir());
 
-    // Registrar comandos de cliente
-    ll::event::EventBus::getInstance().emplaceListener<ll::event::command::ClientCommandRegisterEvent>(
+    // Registrar comandos de cliente internacionalizados
+    mCommandListener = ll::event::EventBus::getInstance().emplaceListener<ll::event::command::ClientCommandRegisterEvent>(
         [](ll::event::command::ClientCommandRegisterEvent&) {
             auto& cmd = ll::command::CommandRegistrar::getInstance(true).getOrCreateCommand(
                 "aeris",
@@ -83,31 +85,32 @@ bool AerisMod::enable() {
                 CommandPermissionLevel::Any
             );
 
-            // /aeris (ayuda / información)
+            // /aeris (ayuda / información general)
             cmd.overload().execute([](CommandOrigin const&, CommandOutput& output) {
-                output.success("§6[Aeris]§r v{} by ByCesarDev", "0.1.0-alpha");
-                output.success("Target: Minecraft 1.26.51.01 | Shaders & Rendering");
-                output.success("Commands: /aeris help, /aeris info, /aeris version");
+                output.success(trFormat("cmd.aeris.header", {"0.1.0-alpha"}));
+                output.success(trFormat("cmd.aeris.desc", {std::string(CompatibilityManager::getInstance().targetVersion())}));
+                output.success(tr("cmd.aeris.commands"));
             });
 
             cmd.overload().text("help").execute([](CommandOrigin const&, CommandOutput& output) {
-                output.success("§6=== Aeris Help ===§r");
-                output.success("/aeris - Show mod overview");
-                output.success("/aeris info - Show system and compatibility info");
-                output.success("/aeris version - Show current version");
+                output.success(tr("cmd.help.header"));
+                output.success(tr("cmd.help.aeris"));
+                output.success(tr("cmd.help.info"));
+                output.success(tr("cmd.help.version"));
             });
 
             cmd.overload().text("info").execute([](CommandOrigin const&, CommandOutput& output) {
                 auto const& compat = CompatibilityManager::getInstance();
-                output.success("§6=== Aeris System Info ===§r");
-                output.success("Detected: {}", compat.detectedVersion());
-                output.success("Target: {}", compat.targetVersion());
-                output.success("Compatible: {}", compat.isVersionCompatible() ? "§aYes§r" : "§cNo§r");
-                output.success("Graphics Switch: {}", compat.isGraphicsSwitchSupported() ? "§aReady§r" : "§cUnavailable§r");
+                output.success(tr("cmd.info.header"));
+                output.success(trFormat("cmd.info.detected", {compat.detectedVersion()}));
+                output.success(trFormat("cmd.info.loader", {compat.detectedLoaderVersion()}));
+                output.success(trFormat("cmd.info.target", {std::string(compat.targetVersion())}));
+                output.success(trFormat("cmd.info.compatible", {compat.isVersionCompatible() ? tr("cmd.info.yes") : tr("cmd.info.no")}));
+                output.success(trFormat("cmd.info.graphicsSwitch", {compat.isGraphicsSwitchSupported() ? tr("cmd.info.ready") : tr("cmd.info.unavailable")}));
             });
 
             cmd.overload().text("version").execute([](CommandOrigin const&, CommandOutput& output) {
-                output.success("Aeris v{} (Client Mod)", "0.1.0-alpha");
+                output.success(trFormat("cmd.version.text", {"0.1.0-alpha"}));
             });
         }
     );
@@ -119,6 +122,13 @@ bool AerisMod::enable() {
 bool AerisMod::disable() {
     auto& logger = getSelf().getLogger();
     logger.info("Aeris disabling...");
+
+    // Liberar suscripción a comandos de forma limpia
+    if (mCommandListener) {
+        ll::event::EventBus::getInstance().removeListener(mCommandListener);
+        mCommandListener.reset();
+    }
+
     return true;
 }
 

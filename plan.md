@@ -1,4 +1,3 @@
-
 Bro, ahora sí. 🔥 Vamos a darle a Antigravity un prompt que no se limite a decirle «crea un Iris para Bedrock», sino que le indique exactamente qué investigar, qué reutilizar, qué desarrollar y cómo comenzar a construir Aeris.
 
 La idea es que Antigravity trabaje sobre el repositorio de RenderDragonShaderLoader como referencia, pero que Aeris sea un proyecto independiente, con arquitectura propia, interfaz en inglés y español, y una base preparada para incorporar optimizaciones similares a Sodium en el futuro.
@@ -798,7 +797,6 @@ Y tampoco le estamos pidiendo reescribir absolutamente todo desde cero: debe ide
 
 Con este prompt ya puede comenzar el desarrollo real de Aeris 0.1.0-alpha.
 
-
 ---
 
 # 📋 MASTER CHECKLIST DE DESARROLLO — AERIS 0.1.0-ALPHA
@@ -808,52 +806,56 @@ Este checklist es la guía operativa viva de desarrollo para seguir el avance de
 ---
 
 ### 🔍 Fase 0 — Auditoría Técnica e Investigación (RenderDragonShaderLoader)
-- [x] **Auditoría de Shaders y Formatos (`core/`)**
-  - [x] Analizar `src/core/ShaderPack.*` (escaneo de directorios, detección de `.material.bin`, subpacks).
-  - [x] Analizar el parser de `shaders.properties` y modelos de parámetros (`ShaderParameter.h`).
-  - [x] Analizar `src/core/GraphicsModeController.*` (conmutación Forward/Fancy vs Deferred/Vibrant Visuals mediante opciones internas).
-- [x] **Auditoría de Inyecciones y Hooks (`hook/`)**
-  - [x] Auditar `MaterialHooks.*` (firmas binarias para `readFile`, `endFrame`, `reloadMaterial`).
-  - [x] Auditar `DragDropHooks.*` (subclaseo de `WNDPROC`, intercepción de `WM_DROPFILES`).
-- [x] **Auditoría de Arquitectura de UI (`ui/`)**
-  - [x] Analizar abstracción pura de dibujo `UiCanvas.h` y layouts (`UiLayout.*`, `UiSettings.*`, `UiScreen.*`).
-  - [x] Analizar adaptación al juego en `ShaderManagerScreen.*` (técnica de escena nativa vacía / placeholder dialog tomada de Lamium).
-- [x] **Generar Documento de Auditoría**
-  - [x] Crear `docs/ARCHITECTURE_AUDIT.md` detallando componentes reutilizables, código a reescribir, dependencias de versión, obligaciones de licencia (LGPL-3.0) y riesgos.
+
+- [X] **Auditoría de Shaders y Formatos (`core/`)**
+  - [X] Analizar `src/core/ShaderPack.*` (escaneo de directorios, detección de `.material.bin`, subpacks).
+  - [X] Analizar el parser de `shaders.properties` y modelos de parámetros (`ShaderParameter.h`).
+  - [X] Analizar `src/core/GraphicsModeController.*` (conmutación Forward/Fancy vs Deferred/Vibrant Visuals mediante opciones internas).
+- [X] **Auditoría de Inyecciones y Hooks (`hook/`)**
+  - [X] Auditar `MaterialHooks.*` (firmas binarias para `readFile`, `endFrame`, `reloadMaterial`).
+  - [X] Auditar `DragDropHooks.*` (subclaseo de `WNDPROC`, intercepción de `WM_DROPFILES`).
+- [X] **Auditoría de Arquitectura de UI (`ui/`)**
+  - [X] Analizar abstracción pura de dibujo `UiCanvas.h` y layouts (`UiLayout.*`, `UiSettings.*`, `UiScreen.*`).
+  - [X] Analizar adaptación al juego en `ShaderManagerScreen.*` (técnica de escena nativa vacía / placeholder dialog tomada de Lamium).
+- [X] **Generar Documento de Auditoría**
+  - [X] Crear `docs/ARCHITECTURE_AUDIT.md` detallando componentes reutilizables, código a reescribir, dependencias de versión, obligaciones de licencia (LGPL-3.0) y riesgos.
 
 ---
 
 ### 🏗️ Fase 1 — Creación del Proyecto Independiente Aeris
-- [x] **Estructura de Directorios**
-  - [x] Crear árbol de carpetas en `Aeris/`:
+
+- [X] **Estructura de Directorios**
+  - [X] Crear árbol de carpetas en `Aeris/`:
     - `src/{core,shaders,hooks,rendering,optimization,ui,localization,mod}`
     - `lang/`, `config/`, `docs/`, `tests/`, `samples/`
-- [x] **Sistema de Compilación y Configuración**
-  - [x] Crear `xmake.lua` propio adaptado para C++20, `clang-cl`, runtime MD y LeviLamina client mod.
-  - [x] Crear `manifest.json` y `tooth.json` configurados para Aeris (autor: `ByCesarDev`).
-  - [x] Configurar `.clang-format`, `.clang-tidy` e inclusión de encabezados limpia.
-- [x] **Licenciamiento y Avisos Legales**
-  - [x] Establecer `LICENSE` (LGPL-3.0).
-  - [x] Crear `THIRD_PARTY_NOTICES.md` con atribución explícita a RenderDragonShaderLoader, Lamium, Iris, etc.
-- [x] **Validación de Compilación Base**
-  - [x] Compilar el esqueleto del proyecto sin errores para verificar que el entorno de desarrollo y toolchain están listos.
+- [X] **Sistema de Compilación y Configuración**
+  - [X] Crear `xmake.lua` propio adaptado para C++20, `clang-cl`, runtime MD y LeviLamina client mod.
+  - [X] Crear `manifest.json` y `tooth.json` configurados para Aeris (autor: `ByCesarDev`).
+  - [X] Configurar `.clang-format`, `.clang-tidy` e inclusión de encabezados limpia.
+- [X] **Licenciamiento y Avisos Legales**
+  - [X] Establecer `LICENSE` (LGPL-3.0).
+  - [X] Crear `THIRD_PARTY_NOTICES.md` con atribución explícita a RenderDragonShaderLoader, Lamium, Iris, etc.
+- [X] **Validación de Compilación Base**
+  - [X] Compilar el esqueleto del proyecto sin errores para verificar que el entorno de desarrollo y toolchain están listos.
 
 ---
 
 ### ⚙️ Fase 2 — Integración y Ciclo de Vida en LeviLamina
-- [x] **Punto de Entrada del Mod**
-  - [x] Implementar `AerisMod.cpp` (registro en el runtime de LeviLamina con hooks de ciclo de vida).
-- [x] **Capa de Compatibilidad (`CompatibilityManager`)**
-  - [x] Detección segura de la versión en tiempo de ejecución de Minecraft Bedrock.
+
+- [X] **Punto de Entrada del Mod**
+  - [X] Implementar `AerisMod.cpp` (registro en el runtime de LeviLamina con hooks de ciclo de vida).
+- [X] **Capa de Compatibilidad (`CompatibilityManager`)**
+  - [X] Detección segura de la versión en tiempo de ejecución de Minecraft Bedrock.
   - [ ] Verificación y validación estricta de firmas en memoria antes de aplicar cualquier hook.
   - [ ] Fallback seguro: si una firma no coincide, desactivar funciones dependientes sin crashear el juego.
 - [ ] **Comandos de Chat y Teclas de Acceso Rápido**
-  - [x] Registrar comando raíz `/aeris` con subcomandos: `ui`, `scan`, `list`, `rollback`, `key`, `help`.
+  - [X] Registrar comando raíz `/aeris` con subcomandos: `ui`, `scan`, `list`, `rollback`, `key`, `help`.
   - [ ] Manejo de atajo de teclado global configurable (por defecto tecla `G`) con liberación limpia de inputs.
 
 ---
 
 ### 📦 Fase 3 — Gestión de Paquetes de Shaders (`ShaderPackManager`)
+
 - [ ] **Descubrimiento y Escaneo**
   - [ ] Implementar escaneo de `data/shaderpacks/` (detección de `.zip`, carpetas extraídas y archivos con `.material.bin`).
   - [ ] Soporte para archivos `.mcpack` estructurados válidos.
@@ -870,6 +872,7 @@ Este checklist es la guía operativa viva de desarrollo para seguir el avance de
 ---
 
 ### 🎨 Fase 4 — Integración con RenderDragon y Hot-Reload
+
 - [ ] **Hooks de Materiales (`MaterialHooks`)**
   - [ ] Redirección en tiempo real de `readFile` cuando el juego solicite `data/renderer/materials/*.material.bin`.
   - [ ] Enrutamiento hacia los binarios del shader pack activo (`data/generated/<pack>/compiled/` o precompilados).
@@ -886,6 +889,7 @@ Este checklist es la guía operativa viva de desarrollo para seguir el avance de
 ---
 
 ### 🎛️ Fase 5 — Sistema de Opciones y Parámetros de Shaders
+
 - [ ] **Parser de `shaders.properties`**
   - [ ] Soporte de booleanos (`option.ENABLE_FEATURE =`).
   - [ ] Soporte de sliders numéricos enteros y decimales (`min max default`).
@@ -899,6 +903,7 @@ Este checklist es la guía operativa viva de desarrollo para seguir el avance de
 ---
 
 ### 🔬 Fase 6 — Investigación de Compilación de Shaders
+
 - [ ] **Diseño Arquitectónico del Compilador**
   - [ ] Diseñar interfaces `IShaderCompiler`, `ShaderCompilationJob`, `ShaderCompilationResult`.
   - [ ] Diseñar sistema de caché de materiales compilados (`ShaderCache`).
@@ -909,6 +914,7 @@ Este checklist es la guía operativa viva de desarrollo para seguir el avance de
 ---
 
 ### 🖥️ Fase 7 — Interfaz de Usuario de Aeris (Estilo Iris)
+
 - [ ] **Motor de Renderizado Gráfico Abstracto**
   - [ ] Implementar `UiCanvas` (dibujo de rectángulos sólidos, texto con métricas precisas y flush de lotes).
 - [ ] **Captura de Entrada y Escena Nativa**
@@ -928,21 +934,23 @@ Este checklist es la guía operativa viva de desarrollo para seguir el avance de
 ---
 
 ### 🌐 Fase 8 — Localización Bilingüe (Inglés y Español)
-- [x] **Archivos de Traducción**
-  - [x] Crear `lang/en_US.json` (inglés completo como idioma base/fallback).
-  - [x] Crear `lang/es_ES.json` (español completo, profesional y natural).
-- [x] **Motor de Localización (`LocalizationManager`)**
-  - [x] Soporte UTF-8 completo.
-  - [x] Búsqueda por claves con fallback inmediato a inglés si falta una clave.
+
+- [X] **Archivos de Traducción**
+  - [X] Crear `lang/en_US.json` (inglés completo como idioma base/fallback).
+  - [X] Crear `lang/es_ES.json` (español completo, profesional y natural).
+- [X] **Motor de Localización (`LocalizationManager`)**
+  - [X] Soporte UTF-8 completo.
+  - [X] Búsqueda por claves con fallback inmediato a inglés si falta una clave.
   - [ ] Soporte para interpolación de parámetros (`{0}`, `{1}`).
-  - [x] Cero strings de usuario hardcodeados en el código C++.
-  - [x] Exclusión total de idiomas no contemplados (sin chino ni textos heredados sin traducir).
+  - [X] Cero strings de usuario hardcodeados en el código C++.
+  - [X] Exclusión total de idiomas no contemplados (sin chino ni textos heredados sin traducir).
 
 ---
 
 ### ⚡ Fase 9 — Cimientos de Rendimiento (Filosofía Sodium)
+
 - [ ] **Módulo de Diagnósticos y Métricas**
-  - [x] Implementar `PerformanceManager` y `RenderDiagnostics`.
+  - [X] Implementar `PerformanceManager` y `RenderDiagnostics`.
   - [ ] Medición de tiempos de carga de shaders y sobrecarga de procesamiento de Aeris.
   - [ ] Registro de backend gráfico activo y capacidades de RenderDragon detectadas.
 - [ ] **Hoja de Ruta de Optimización Futura**
@@ -952,20 +960,23 @@ Este checklist es la guía operativa viva de desarrollo para seguir el avance de
 ---
 
 ### 💾 Fase 10 — Configuración y Persistencia
-- [x] **Esquema de Configuración**
-  - [x] Crear `config/config.json` estructurado y versionado (`configVersion`, `language`, `ui`, `shaders`, `performance`, `safety`).
-- [x] **Manejador de Configuración (`ConfigManager`)**
-  - [x] Lectura y escritura atómica (evitar archivos corruptos en cierres inesperados).
-  - [ ] Tolerancia a fallos: regeneración de claves faltantes con valores por defecto seguros.
+
+- [X] **Esquema de Configuración**
+  - [X] Crear `config/config.json` estructurado y versionado (`configVersion`, `language`, `ui`, `shaders`, `performance`, `safety`).
+- [X] **Manejador de Configuración (`ConfigManager`)**
+  - [X] Lectura y escritura atómica (evitar archivos corruptos en cierres inesperados).
+  - [x] Tolerancia a fallos: regeneración de claves faltantes con valores por defecto seguros.
 
 ---
 
 ### 🧪 Fase 11 — Pruebas, Estabilidad y Validación
+
 - [ ] **Pruebas Unitarias Automatizadas (`tests/`)**
   - [ ] Pruebas del parser de `shaders.properties`.
   - [ ] Pruebas de seguridad de extracción de archivos (detección y bloqueo de path traversal).
-  - [ ] Pruebas de persistencia y carga de `config.json`.
-  - [ ] Pruebas del motor de localización (fallback de idiomas, sustitución de variables).
+  - [x] Pruebas de la capa de compatibilidad y detección segura de versiones (coincidencia con 1.26.51.01 y rechazo de versiones incompatibles).
+  - [x] Pruebas de persistencia y carga de `config.json` (validación transaccional y rechazo de path traversal).
+  - [x] Pruebas del motor de localización (fallback de idiomas, sustitución de variables y formato posicional).
   - [ ] Pruebas de resolución de rutas de materiales precompilados.
 - [ ] **Plan de Pruebas en Juego (Validación Manual)**
   - [ ] Checklist de verificación en cliente Minecraft con registro de SHA-256 de DLL compilada.
@@ -977,6 +988,7 @@ Este checklist es la guía operativa viva de desarrollo para seguir el avance de
 ---
 
 ### 📚 Fase 12 — Documentación y Empaquetado Final
+
 - [ ] **Documentación Principal**
   - [ ] Crear `README.md` completo en inglés.
   - [ ] Crear `README_ES.md` completo en español.

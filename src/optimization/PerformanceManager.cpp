@@ -8,21 +8,44 @@ PerformanceManager& PerformanceManager::getInstance() {
 }
 
 void PerformanceManager::initialize() {
-    mLastFpsUpdate = std::chrono::steady_clock::now();
-    mFrameCount = 0;
-    mFps = 60.0f;
+    reset();
+}
+
+void PerformanceManager::reset() {
+    mFps.reset();
+    mFrameTimeMs.reset();
+    mFrameCount    = 0;
+    mLastFpsUpdate = std::chrono::steady_clock::time_point{};
+    mLastFrameTime = std::chrono::steady_clock::time_point{};
 }
 
 void PerformanceManager::recordFrame() {
     if (!mDiagnosticsEnabled) return;
 
-    ++mFrameCount;
     auto now = std::chrono::steady_clock::now();
-    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - mLastFpsUpdate).count();
 
-    if (elapsed >= 1000) {
-        mFps = static_cast<float>(mFrameCount * 1000) / static_cast<float>(elapsed);
-        mFrameCount = 0;
+    // Medición de delta de frame individual
+    if (mLastFrameTime.time_since_epoch().count() > 0) {
+        auto frameDuration = std::chrono::duration_cast<std::chrono::microseconds>(now - mLastFrameTime).count();
+        if (frameDuration > 0) {
+            float dtMs = static_cast<float>(frameDuration) / 1000.0f;
+            mFrameTimeMs = dtMs;
+        }
+    }
+    mLastFrameTime = now;
+
+    // Conteo y agregación de FPS en ventana de 1 segundo
+    if (mLastFpsUpdate.time_since_epoch().count() == 0) {
+        mLastFpsUpdate = now;
+        mFrameCount    = 1;
+        return;
+    }
+
+    ++mFrameCount;
+    auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(now - mLastFpsUpdate).count();
+    if (elapsedMs >= 1000) {
+        mFps = (static_cast<float>(mFrameCount) * 1000.0f) / static_cast<float>(elapsedMs);
+        mFrameCount    = 0;
         mLastFpsUpdate = now;
     }
 }
