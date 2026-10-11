@@ -189,12 +189,17 @@ bool MaterialHooks::install() {
         CompatibilityManager::getInstance().setCapabilityState(
             FeatureCapability::MaterialRedirection,
             CapabilityState::Unknown,
-            "Safe mode: native hooks disabled by default"
+            "cmd.info.reason.safemode"
         );
         CompatibilityManager::getInstance().setCapabilityState(
             FeatureCapability::MaterialHotReload,
             CapabilityState::Unknown,
-            "Safe mode: native hooks disabled by default"
+            "cmd.info.reason.safemode"
+        );
+        CompatibilityManager::getInstance().setCapabilityState(
+            FeatureCapability::GraphicsModeSwitch,
+            CapabilityState::Unknown,
+            "cmd.info.reason.safemode"
         );
         return false;
     }

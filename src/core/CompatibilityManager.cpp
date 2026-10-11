@@ -157,9 +157,9 @@ void CompatibilityManager::initialize(std::string gameVersion, std::string loade
         setCapabilityState(FeatureCapability::GraphicsModeSwitch, CapabilityState::Unsupported, reason);
     } else {
         // En versión compatible, las capacidades empiezan en Unknown hasta ser verificadas en runtime por sus subsistemas
-        setCapabilityState(FeatureCapability::MaterialRedirection, CapabilityState::Unknown, "Pending signature verification in 1.26.51.01");
-        setCapabilityState(FeatureCapability::MaterialHotReload, CapabilityState::Unknown, "Pending runtime hook and frame builder resolution");
-        setCapabilityState(FeatureCapability::GraphicsModeSwitch, CapabilityState::Unknown, "Pending options ID verification");
+        setCapabilityState(FeatureCapability::MaterialRedirection, CapabilityState::Unknown, "cmd.info.reason.pending_verification");
+        setCapabilityState(FeatureCapability::MaterialHotReload, CapabilityState::Unknown, "cmd.info.reason.pending_verification");
+        setCapabilityState(FeatureCapability::GraphicsModeSwitch, CapabilityState::Unknown, "cmd.info.reason.pending_verification");
     }
 }
 

@@ -27,14 +27,15 @@ namespace aeris {
 namespace {
 
 std::string formatCapabilityDisplay(CapabilityState state, std::string const& reason) {
+    std::string localizedReason = tr(reason);
     switch (state) {
     case CapabilityState::Supported:
         return tr("cmd.info.state.supported");
     case CapabilityState::Unsupported:
-        return trFormat("cmd.info.state.unsupported", {reason});
+        return trFormat("cmd.info.state.unsupported", {localizedReason});
     case CapabilityState::Unknown:
     default:
-        return trFormat("cmd.info.state.unknown", {reason});
+        return trFormat("cmd.info.state.unknown", {localizedReason});
     }
 }
 
