@@ -1,7 +1,11 @@
 #pragma once
 
+#include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
+
+#include "core/SignatureVerifier.h"
 
 namespace aeris {
 
@@ -19,6 +23,16 @@ enum class FeatureCapability {
 
 std::string_view capabilityStateToString(CapabilityState state);
 std::string_view featureCapabilityToString(FeatureCapability cap);
+
+struct SignatureDiagnostic {
+    std::string     name;
+    SignatureStatus status       = SignatureStatus::NotFound;
+    uintptr_t       address      = 0;
+    uintptr_t       rva          = 0;
+    size_t          matchCount   = 0;
+    std::string     matchedPattern;
+    std::string     details;
+};
 
 class CompatibilityManager {
 public:
@@ -51,6 +65,11 @@ public:
     [[nodiscard]] std::string const& detectedLoaderVersion() const { return mDetectedLoaderVersion; }
     [[nodiscard]] std::string_view   targetVersion() const { return "1.26.51.01"; }
 
+    // Diagnósticos de firmas nativas
+    void setSignatureDiagnostic(std::string_view name, SignatureDiagnostic diag);
+    [[nodiscard]] std::optional<SignatureDiagnostic> getSignatureDiagnostic(std::string_view name) const;
+    [[nodiscard]] std::vector<SignatureDiagnostic> const& getAllSignatureDiagnostics() const;
+
     // Helpers de control explícito (compatibilidad hacia atrás)
     void setHotReloadSupported(bool supported) {
         setCapabilityState(
@@ -80,13 +99,14 @@ private:
         std::string     reason = "Not evaluated";
     };
 
-    std::string    mDetectedVersion       = "Unknown";
-    std::string    mRawDetectedVersion    = "Unknown";
-    std::string    mDetectedLoaderVersion = "Unknown";
-    bool           mVersionCompatible     = false;
-    CapabilityInfo mMaterialRedirection;
-    CapabilityInfo mMaterialHotReload;
-    CapabilityInfo mGraphicsModeSwitch;
+    std::string                       mDetectedVersion       = "Unknown";
+    std::string                       mRawDetectedVersion    = "Unknown";
+    std::string                       mDetectedLoaderVersion = "Unknown";
+    bool                              mVersionCompatible     = false;
+    CapabilityInfo                    mMaterialRedirection;
+    CapabilityInfo                    mMaterialHotReload;
+    CapabilityInfo                    mGraphicsModeSwitch;
+    std::vector<SignatureDiagnostic>  mSignatureDiagnostics;
 };
 
 } // namespace aeris

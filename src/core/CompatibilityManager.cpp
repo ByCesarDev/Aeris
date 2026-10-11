@@ -51,6 +51,7 @@ void CompatibilityManager::reset() {
     mMaterialRedirection = {CapabilityState::Unknown, "Not evaluated"};
     mMaterialHotReload   = {CapabilityState::Unknown, "Not evaluated"};
     mGraphicsModeSwitch  = {CapabilityState::Unknown, "Not evaluated"};
+    mSignatureDiagnostics.clear();
 }
 
 CapabilityState CompatibilityManager::getCapabilityState(FeatureCapability cap) const {
@@ -103,6 +104,30 @@ void CompatibilityManager::setCapabilityState(FeatureCapability cap, CapabilityS
     }
 }
 
+void CompatibilityManager::setSignatureDiagnostic(std::string_view name, SignatureDiagnostic diag) {
+    diag.name = std::string(name);
+    for (auto& existing : mSignatureDiagnostics) {
+        if (existing.name == name) {
+            existing = std::move(diag);
+            return;
+        }
+    }
+    mSignatureDiagnostics.push_back(std::move(diag));
+}
+
+std::optional<SignatureDiagnostic> CompatibilityManager::getSignatureDiagnostic(std::string_view name) const {
+    for (auto const& diag : mSignatureDiagnostics) {
+        if (diag.name == name) {
+            return diag;
+        }
+    }
+    return std::nullopt;
+}
+
+std::vector<SignatureDiagnostic> const& CompatibilityManager::getAllSignatureDiagnostics() const {
+    return mSignatureDiagnostics;
+}
+
 bool CompatibilityManager::isVersionMatching(std::string_view version, std::string_view target) {
     if (version.empty() || version == "Unknown" || version == "?") {
         return false;
@@ -151,7 +176,7 @@ void CompatibilityManager::initialize(std::string gameVersion, std::string loade
     mVersionCompatible = isVersionMatching(mRawDetectedVersion, targetVersion());
 
     if (!mVersionCompatible) {
-        std::string reason = "Target version mismatch (detected: " + mDetectedVersion + ", required: " + std::string(targetVersion()) + ")";
+        std::string reason = "cmd.info.reason.incompatible_version";
         setCapabilityState(FeatureCapability::MaterialRedirection, CapabilityState::Unsupported, reason);
         setCapabilityState(FeatureCapability::MaterialHotReload, CapabilityState::Unsupported, reason);
         setCapabilityState(FeatureCapability::GraphicsModeSwitch, CapabilityState::Unsupported, reason);

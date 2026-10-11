@@ -5,14 +5,16 @@
 #include <string>
 #include <string_view>
 
+#include "core/SignatureVerifier.h"
+
 namespace aeris {
 
 /**
  * @brief Native hook manager for RenderDragon material interception.
  * 
  * Provides safe detours for the client engine's internal readFile and endFrame functions.
- * All memory alterations are gated behind CompatibilityManager checks.
- * If signature verification fails, hooks are safely bypassed without modifying game memory.
+ * All memory alterations are gated behind CompatibilityManager checks and signature verification.
+ * If signature verification fails or is ambiguous, hooks are safely bypassed without touching memory.
  */
 class MaterialHooks {
 public:
@@ -20,7 +22,13 @@ public:
     ~MaterialHooks();
 
     /**
-     * @brief Installs the readFile and frame hooks if signatures are verified.
+     * @brief Inspects and validates binary signatures against module memory without installing detours.
+     * Evaluates uniqueness, module bounds, and executable permissions.
+     */
+    void verifySignatures();
+
+    /**
+     * @brief Installs the readFile and frame hooks if safe mode is disabled and signatures are verified.
      * @return true if primary redirection hook was successfully installed, false otherwise.
      */
     bool install();
@@ -36,6 +44,7 @@ public:
     void restoreVanilla();
 
     [[nodiscard]] bool isInstalled() const;
+    [[nodiscard]] bool areSignaturesVerified() const;
     [[nodiscard]] bool isReloadAvailable() const;
     [[nodiscard]] std::string lastError() const;
 
@@ -53,9 +62,10 @@ private:
     MaterialHooks() = default;
 
     mutable std::mutex mMutex;
-    bool               mInstalled       = false;
-    bool               mReloadAvailable = false;
-    bool               mReloadPending   = false;
+    bool               mInstalled          = false;
+    bool               mSignaturesVerified = false;
+    bool               mReloadAvailable    = false;
+    bool               mReloadPending      = false;
     std::string        mLastError;
 };
 

@@ -137,5 +137,10 @@
     "cmd.info.state.unsupported": "§cUnsupported§r ({0})",
     "cmd.info.state.unknown": "§eUnknown§r ({0})",
     "cmd.info.reason.safemode": "Safe mode: native hooks disabled by default",
-    "cmd.info.reason.pending_verification": "Pending signature verification in 1.26.51.01"
+    "cmd.info.reason.pending_verification": "Pending signature verification in 1.26.51.01",
+    "cmd.info.reason.not_found": "Signature not found in executable memory",
+    "cmd.info.reason.ambiguous": "Ambiguous signature (multiple matches detected)",
+    "cmd.info.reason.invalid_memory": "Resolved address in invalid/non-executable region",
+    "cmd.info.reason.incompatible_version": "Target version mismatch",
+    "cmd.info.reason.safemode_verified": "Verified (safe mode active, hooks detached)"
 }
