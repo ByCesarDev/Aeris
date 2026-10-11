@@ -105,7 +105,13 @@ bool AerisMod::enable() {
     ShaderPackManager::getInstance().scan(packsDir, genDir);
 
     // 2. Comprobar instalación de hooks nativos (bloqueados por defecto en modo seguro)
-    MaterialHooks::getInstance().install();
+    try {
+        MaterialHooks::getInstance().install();
+    } catch (std::exception const& e) {
+        logger.error("Exception during MaterialHooks verification/install: {}", e.what());
+    } catch (...) {
+        logger.error("Unknown exception during MaterialHooks verification/install");
+    }
 
     // 3. Suscribir ClientCommandRegisterEvent dentro de enable() según el patrón de RenderDragonShaderLoader
     logger.info("Installing ClientCommandRegisterEvent listener...");

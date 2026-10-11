@@ -210,6 +210,10 @@ void MaterialHooks::restoreVanilla() {
 
 void MaterialHooks::verifySignatures() {
     std::lock_guard lock(mMutex);
+    verifySignaturesLocked();
+}
+
+void MaterialHooks::verifySignaturesLocked() {
     mSignaturesVerified = false;
 
 #if __has_include("ll/api/memory/Hook.h")
@@ -394,7 +398,7 @@ bool MaterialHooks::install() {
     auto& logger = mod->getLogger();
 
     // 1. Ejecutar análisis y verificación rigurosa de firmas
-    verifySignatures();
+    verifySignaturesLocked();
 
     // 2. MODO SEGURO: Ganchos experimentales desactivados por defecto
     auto const& safety = ConfigManager::getInstance().config().safety;

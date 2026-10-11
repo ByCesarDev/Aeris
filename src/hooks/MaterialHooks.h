@@ -61,7 +61,9 @@ public:
 private:
     MaterialHooks() = default;
 
-    mutable std::mutex mMutex;
+    void verifySignaturesLocked();
+
+    mutable std::recursive_mutex mMutex;
     bool               mInstalled          = false;
     bool               mSignaturesVerified = false;
     bool               mReloadAvailable    = false;
