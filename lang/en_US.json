@@ -131,7 +131,7 @@
     "cmd.help.rollback": "/aeris rollback - Deactivate shaders and restore vanilla materials",
     "cmd.rollback.success": "Shader materials deactivated. Vanilla materials restored.",
     "cmd.rollback.already_vanilla": "No shader pack is currently active. Already using vanilla materials.",
-    "cmd.info.materialRedirection": "Material Redirection: {0}",
+    "cmd.info.materialRedirection": "Redirection Capability: {0}",
     "cmd.info.hotReload": "Material Hot Reload: {0}",
     "cmd.info.state.supported": "§aSupported§r",
     "cmd.info.state.unsupported": "§cUnsupported§r ({0})",
@@ -143,5 +143,15 @@
     "cmd.info.reason.invalid_memory": "Resolved address in invalid/non-executable region",
     "cmd.info.reason.incompatible_version": "Target version mismatch",
     "cmd.info.reason.safemode_verified": "Verified (safe mode active, hooks detached)",
-    "cmd.info.reason.passive_observation": "Passive observation active (non-modifying read hook)"
+    "cmd.info.reason.passive_observation": "Passive observation active (non-modifying read hook)",
+    "cmd.info.state.supported_with_reason": "§aSupported§r ({0})",
+    "cmd.info.redir.detached": "§eDisabled§r (hook detached)",
+    "cmd.info.redir.passive": "§aPassive Observation§r (hook attached, vanilla passthrough)",
+    "cmd.info.redir.dry_run": "§aDry-Run Simulation§r (hook attached, index lookup active, 0 bytes modified)",
+    "cmd.info.redir.active": "§aActive Redirection§r (custom materials overridden)",
+    "cmd.info.telemetry": "Observed Reads: {0} ({1} .material.bin, {2} Dry-Run matches, {3} without replacement)",
+    "cmd.info.hookStatus": "readFile Hook: {0}",
+    "cmd.info.redirectStatus": "Redirection State: {0}",
+    "cmd.info.hook.installed": "§aInstalled§r",
+    "cmd.info.hook.detached": "§eDetached§r"
 }

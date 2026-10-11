@@ -83,13 +83,20 @@ std::string* readFileDetour(void* self, std::string* result, Core::PathView* pat
         return ret;
     }
 
-    // 2. Etapa 3.2: Observación pasiva estricta. Jamás modificar los bytes devueltos.
     try {
+        // 2. Observación pasiva (Etapa 3.2)
         MaterialHooks::getInstance().recordPassiveRead(path->getUtf8StringView(), ret->size());
+
+        // 3. Simulación Dry-Run (Etapa 3.3) si está habilitada por configuración
+        auto const& safety = ConfigManager::getInstance().config().safety;
+        if (!safety.safeMode && safety.enableMaterialRedirectDryRun) {
+            MaterialHooks::getInstance().recordDryRunCheck(path->getUtf8StringView(), ret->size());
+        }
     } catch (...) {
         // Protección total ante cualquier excepción en límites de llamada del juego
     }
 
+    // 4. Devolver siempre el resultado original de Minecraft sin modificar bytes
     return ret;
 }
 
@@ -164,6 +171,55 @@ bool MaterialHooks::areSignaturesVerified() const {
 bool MaterialHooks::isPassiveHookActive() const {
     std::lock_guard lock(mMutex);
     return mPassiveHookActive;
+}
+
+bool MaterialHooks::isDryRunActive() const {
+    std::lock_guard lock(mMutex);
+    return mDryRunActive;
+}
+
+uint64_t MaterialHooks::dryRunMatches() const {
+    return MaterialLoader::getInstance().dryRunMatches();
+}
+
+uint64_t MaterialHooks::dryRunMisses() const {
+    return MaterialLoader::getInstance().dryRunMisses();
+}
+
+void MaterialHooks::recordDryRunCheck(std::string_view pathStr, size_t vanillaBytes) {
+    if (!pathStr.ends_with(".material.bin")) {
+        return;
+    }
+
+    auto entry = MaterialLoader::getInstance().findMaterial(pathStr);
+    if (entry.has_value()) {
+        MaterialLoader::getInstance().recordDryRunMatch();
+
+        static std::atomic<int> sLoggedMatches{0};
+        if (sLoggedMatches.fetch_add(1) < 5) {
+            if (auto mod = ll::mod::NativeMod::current()) {
+                mod->getLogger().info(
+                    "[MaterialDryRun] MATCH: '{}' -> Found replacement in pack '{}' (custom size: {} bytes, vanilla size: {} bytes) [Dry-Run: vanilla retained]",
+                    pathStr,
+                    entry->packName,
+                    entry->fileSize,
+                    vanillaBytes
+                );
+            }
+        }
+    } else {
+        MaterialLoader::getInstance().recordDryRunMiss();
+
+        static std::atomic<int> sLoggedMisses{0};
+        if (sLoggedMisses.fetch_add(1) < 3) {
+            if (auto mod = ll::mod::NativeMod::current()) {
+                mod->getLogger().info(
+                    "[MaterialDryRun] MISS: '{}' (no replacement in active pack; vanilla passthrough)",
+                    pathStr
+                );
+            }
+        }
+    }
 }
 
 bool MaterialHooks::isReloadAvailable() const {
@@ -415,10 +471,11 @@ bool MaterialHooks::install() {
     // 1. Ejecutar análisis y verificación rigurosa de firmas
     verifySignaturesLocked();
 
-    // 2. Control de configuración de la Etapa 3.2: Hook pasivo desactivado por defecto
+    // 2. Control de configuración: Hook experimental desactivado por defecto
     auto const& safety = ConfigManager::getInstance().config().safety;
-    if (safety.safeMode || !safety.enablePassiveReadHook) {
-        mLastError = "Passive readFile hook disabled by configuration (safeMode=true or enablePassiveReadHook=false)";
+    bool allowHook = (!safety.safeMode && (safety.enablePassiveReadHook || safety.enableMaterialRedirectDryRun));
+    if (!allowHook) {
+        mLastError = "Material hooks disabled by configuration (safeMode=true or experimental hooks disabled)";
         logger.info("MaterialHooks: {}. Signatures verified diagnostically; memory remains untouched.", mLastError);
         return false;
     }
@@ -460,19 +517,21 @@ bool MaterialHooks::install() {
     }
 
     logger.info("MaterialHooks: Passive readFile detour hooked successfully at {:#x}", reinterpret_cast<uintptr_t>(g_readFileTarget));
+    mInstalled         = true;
+    mPassiveHookActive = safety.enablePassiveReadHook;
+    mDryRunActive      = safety.enableMaterialRedirectDryRun;
+
     CompatibilityManager::getInstance().setCapabilityState(
         FeatureCapability::MaterialRedirection,
         CapabilityState::Supported,
-        "cmd.info.reason.passive_observation"
+        "Signature verified"
     );
 
-    // 6. En Etapa 3.2, endFrame, reloadMaterial y GraphicsMode se mantienen estrictamente DESACTIVADOS
+    // 6. En Etapa 3.3, endFrame, reloadMaterial y GraphicsMode se mantienen estrictamente DESACTIVADOS
     g_endFrameTarget = nullptr;
     g_reloadMaterial = nullptr;
     mReloadAvailable = false;
 
-    mInstalled          = true;
-    mPassiveHookActive  = true;
     return true;
 
 #else

@@ -131,7 +131,7 @@
     "cmd.help.rollback": "/aeris rollback - Desactiva shaders y restaura materiales vanilla",
     "cmd.rollback.success": "Materiales de shader desactivados. Materiales vanilla restaurados.",
     "cmd.rollback.already_vanilla": "No hay ningún paquete de shaders activo. Ya se usan materiales vanilla.",
-    "cmd.info.materialRedirection": "Redirección de Materiales: {0}",
+    "cmd.info.materialRedirection": "Capacidad de Redirección: {0}",
     "cmd.info.hotReload": "Recarga en Caliente: {0}",
     "cmd.info.state.supported": "§aSoportado§r",
     "cmd.info.state.unsupported": "§cNo Soportado§r ({0})",
@@ -143,5 +143,15 @@
     "cmd.info.reason.invalid_memory": "Dirección resuelta en región inválida/no ejecutable",
     "cmd.info.reason.incompatible_version": "Discrepancia con versión objetivo",
     "cmd.info.reason.safemode_verified": "Verificado (modo seguro activo, hooks desconectados)",
-    "cmd.info.reason.passive_observation": "Observación pasiva activa (hook de lectura sin modificaciones)"
+    "cmd.info.reason.passive_observation": "Observación pasiva activa (hook de lectura sin modificaciones)",
+    "cmd.info.state.supported_with_reason": "§aSoportado§r ({0})",
+    "cmd.info.redir.detached": "§eDesactivado§r (hook desconectado)",
+    "cmd.info.redir.passive": "§aObservación Pasiva§r (hook instalado, delegación vanilla)",
+    "cmd.info.redir.dry_run": "§aSimulación / Dry-Run§r (hook instalado, resolución activa, 0 bytes modificados)",
+    "cmd.info.redir.active": "§aRedirección Activa§r (materiales sustituidos)",
+    "cmd.info.telemetry": "Lecturas observadas: {0} ({1} .material.bin, {2} coincidencias Dry-Run, {3} sin reemplazo)",
+    "cmd.info.hookStatus": "Hook readFile: {0}",
+    "cmd.info.redirectStatus": "Estado de Redirección: {0}",
+    "cmd.info.hook.installed": "§aInstalado§r",
+    "cmd.info.hook.detached": "§eDesconectado§r"
 }

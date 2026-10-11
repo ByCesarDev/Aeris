@@ -979,7 +979,7 @@ Este checklist es la guía operativa viva de desarrollo para seguir el avance de
   - [x] Pruebas del motor de localización (fallback de idiomas, sustitución de variables y formato posicional).
   - [X] Pruebas de resolución de rutas de materiales precompilados.
 - [ ] **Plan de Pruebas en Juego (Validación Manual)**
-  - [X] Checklist de verificación en cliente Minecraft con registro de SHA-256 de DLL compilada (Validación Etapa 3.1).
+  - [X] Checklist de verificación en cliente Minecraft: Etapa 3.1 (firmas), Etapa 3.2 (hook pasivo readFile) y Etapa 3.3 (resolución dry-run y telemetría de 3 estados).
   - [ ] Prueba de apertura y cierre de interfaz sin bloqueo de ratón ni pérdida de controles.
   - [ ] Prueba de importación de packs por archivo y drag & drop.
   - [ ] Prueba de activación de shader precompilado y cambio automático de modo gráfico.

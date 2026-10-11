@@ -30,6 +30,9 @@ std::string formatCapabilityDisplay(CapabilityState state, std::string const& re
     std::string localizedReason = tr(reason);
     switch (state) {
     case CapabilityState::Supported:
+        if (!reason.empty() && reason != "Signature verified" && reason != "Signatures verified") {
+            return trFormat("cmd.info.state.supported_with_reason", {localizedReason});
+        }
         return tr("cmd.info.state.supported");
     case CapabilityState::Unsupported:
         return trFormat("cmd.info.state.unsupported", {localizedReason});
@@ -103,6 +106,15 @@ bool AerisMod::enable() {
     auto packsDir = getPacksDir();
     auto genDir   = getGeneratedDir();
     ShaderPackManager::getInstance().scan(packsDir, genDir);
+
+    auto const& savedPack = ConfigManager::getInstance().config().shaders.activePack;
+    if (!savedPack.empty()) {
+        if (ShaderPackManager::getInstance().selectPack(savedPack)) {
+            logger.info("Restored active shader pack: '{}'", savedPack);
+        } else {
+            logger.warn("Saved active pack '{}' not found during startup scan", savedPack);
+        }
+    }
 
     // 2. Comprobar instalación de hooks nativos (bloqueados por defecto en modo seguro)
     try {
@@ -205,9 +217,39 @@ bool AerisMod::enable() {
                     output.success(trFormat("cmd.info.target", {std::string(compat.targetVersion())}));
                     output.success(trFormat("cmd.info.compatible", {compat.isVersionCompatible() ? tr("cmd.info.yes") : tr("cmd.info.no")}));
 
+                    auto const& hooks = MaterialHooks::getInstance();
+
+                    // 1. Capacidad Técnica (firmas en binario)
                     auto redirState  = compat.getCapabilityState(FeatureCapability::MaterialRedirection);
                     auto redirReason = compat.getCapabilityReason(FeatureCapability::MaterialRedirection);
                     output.success(trFormat("cmd.info.materialRedirection", {formatCapabilityDisplay(redirState, redirReason)}));
+
+                    // 2. Estado del Hook Nativo
+                    std::string hookDisplay = hooks.isInstalled() ? tr("cmd.info.hook.installed") : tr("cmd.info.hook.detached");
+                    output.success(trFormat("cmd.info.hookStatus", {hookDisplay}));
+
+                    // 3. Estado de Redirección Operativo
+                    std::string redirStatusDisplay;
+                    if (!hooks.isInstalled()) {
+                        redirStatusDisplay = tr("cmd.info.redir.detached");
+                    } else if (hooks.isDryRunActive()) {
+                        redirStatusDisplay = tr("cmd.info.redir.dry_run");
+                    } else if (hooks.isPassiveHookActive()) {
+                        redirStatusDisplay = tr("cmd.info.redir.passive");
+                    } else {
+                        redirStatusDisplay = tr("cmd.info.redir.detached");
+                    }
+                    output.success(trFormat("cmd.info.redirectStatus", {redirStatusDisplay}));
+
+                    // 4. Telemetría de Lecturas
+                    if (hooks.isInstalled()) {
+                        output.success(trFormat("cmd.info.telemetry", {
+                            std::to_string(hooks.passiveReadCount()),
+                            std::to_string(hooks.materialBinReadCount()),
+                            std::to_string(hooks.dryRunMatches()),
+                            std::to_string(hooks.dryRunMisses())
+                        }));
+                    }
 
                     auto hotState  = compat.getCapabilityState(FeatureCapability::MaterialHotReload);
                     auto hotReason = compat.getCapabilityReason(FeatureCapability::MaterialHotReload);

@@ -46,12 +46,16 @@ public:
     [[nodiscard]] bool isInstalled() const;
     [[nodiscard]] bool areSignaturesVerified() const;
     [[nodiscard]] bool isPassiveHookActive() const;
+    [[nodiscard]] bool isDryRunActive() const;
     [[nodiscard]] bool isReloadAvailable() const;
     [[nodiscard]] uint64_t passiveReadCount() const;
     [[nodiscard]] uint64_t materialBinReadCount() const;
+    [[nodiscard]] uint64_t dryRunMatches() const;
+    [[nodiscard]] uint64_t dryRunMisses() const;
     [[nodiscard]] std::string lastError() const;
 
     void recordPassiveRead(std::string_view pathStr, size_t bytesRead);
+    void recordDryRunCheck(std::string_view pathStr, size_t vanillaBytes);
 
     /**
      * @brief Queues a material cache flush to execute on the client render thread at the next endFrame.
@@ -72,6 +76,7 @@ private:
     bool                  mInstalled          = false;
     bool                  mSignaturesVerified = false;
     bool                  mPassiveHookActive  = false;
+    bool                  mDryRunActive       = false;
     bool                  mReloadAvailable    = false;
     bool                  mReloadPending      = false;
     std::atomic<uint64_t> mPassiveReadCount{0};

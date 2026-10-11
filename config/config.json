@@ -20,6 +20,7 @@
     "safety": {
         "safeMode": true,
         "enableExperimentalHooks": false,
-        "enablePassiveReadHook": false
+        "enablePassiveReadHook": false,
+        "enableMaterialRedirectDryRun": false
     }
 }

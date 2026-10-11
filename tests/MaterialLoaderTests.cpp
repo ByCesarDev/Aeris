@@ -168,6 +168,50 @@ void runMaterialLoaderTests() {
 
     check(successCount == 8 * 50 * 2, "Multithreaded concurrent queries must complete without race conditions");
 
+
+    // =========================================================================
+    // 7. Pruebas de la Etapa 3.3: Normalización extendida, seguridad y pre-indexación
+    // =========================================================================
+    check(aeris::MaterialLoader::normalizeMaterialName("data/renderer/materials/CubemapHDRi.material.bin") == "CubemapHDRi.material.bin",
+        "CubemapHDRi with full data/renderer/materials/ prefix must normalize");
+
+    check(aeris::MaterialLoader::normalizeMaterialName("data\\renderer\\materials\\UIText.material.bin") == "UIText.material.bin",
+        "UIText with Windows backslashes must normalize");
+
+    check(aeris::MaterialLoader::normalizeMaterialName("/data/renderer/materials/RenderChunk.material.bin").empty(),
+        "Leading slash absolute path must be rejected");
+
+    check(aeris::MaterialLoader::normalizeMaterialName("C:/Windows/System32/RenderChunk.material.bin").empty(),
+        "Drive letter path must be rejected");
+
+    check(aeris::MaterialLoader::normalizeMaterialName("data/renderer/materials/../RenderChunk.material.bin").empty(),
+        "Path traversal in directory components must be rejected");
+
+    check(aeris::MaterialLoader::normalizeMaterialName("data/renderer/materials/test\0bad.material.bin").empty(),
+        "Null byte in path must be rejected");
+
+    // Pre-indexing test: fast findMaterial without disk I/O
+    loader.setActiveShaderPack("TestPack", {pack1Dir, pack2Dir});
+    auto findChunk = loader.findMaterial("data/renderer/materials/RenderChunk.material.bin");
+    check(findChunk.has_value(), "Pre-indexed RenderChunk must be found via findMaterial");
+    check(findChunk->canonicalName == "RenderChunk.material.bin", "Entry canonicalName must match");
+    check(findChunk->fileSize == chunkBytes.size(), "Cached fileSize must match original bytes size");
+    check(findChunk->packName == "TestPack", "Entry packName must match active pack");
+
+    auto findMissing = loader.findMaterial("data/renderer/materials/NonExistent.material.bin");
+    check(!findMissing.has_value(), "Missing material in findMaterial must return nullopt");
+
+    // Dry-run telemetry tests
+    check(loader.dryRunMatches() == 0, "Initial dryRunMatches must be 0");
+    check(loader.dryRunMisses() == 0, "Initial dryRunMisses must be 0");
+
+    loader.recordDryRunMatch();
+    loader.recordDryRunMatch();
+    loader.recordDryRunMiss();
+    check(loader.dryRunMatches() == 2, "dryRunMatches must record 2 matches");
+    check(loader.dryRunMisses() == 1, "dryRunMisses must record 1 miss");
+
     loader.restoreVanilla();
+
     std::filesystem::remove_all(tempDir);
 }

@@ -30,9 +30,10 @@ struct Config {
     } performance;
 
     struct SafetyConfig {
-        bool safeMode                = true;  // Safe mode on by default
-        bool enableExperimentalHooks = false; // Native hooks disabled by default until verified
-        bool enablePassiveReadHook   = false; // Passive readFile observation hook (Etapa 3.2, disabled by default)
+        bool safeMode                    = true;  // Safe mode on by default
+        bool enableExperimentalHooks     = false; // Native hooks disabled by default until verified
+        bool enablePassiveReadHook       = false; // Passive readFile observation hook (Etapa 3.2, disabled by default)
+        bool enableMaterialRedirectDryRun = false; // Dry-run simulation of material redirection (Etapa 3.3, disabled by default)
     } safety;
 };
 

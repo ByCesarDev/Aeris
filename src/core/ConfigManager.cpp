@@ -165,6 +165,9 @@ bool ConfigManager::load(std::filesystem::path const& configFile) {
             if (s.contains("enablePassiveReadHook")) {
                 candidate.safety.enablePassiveReadHook = s["enablePassiveReadHook"].get<bool>();
             }
+            if (s.contains("enableMaterialRedirectDryRun")) {
+                candidate.safety.enableMaterialRedirectDryRun = s["enableMaterialRedirectDryRun"].get<bool>();
+            }
         }
     } catch (std::exception const& e) {
         mLastError = std::string("Type error reading config fields: ") + e.what();
@@ -225,9 +228,10 @@ bool ConfigManager::save() const {
         {"diagnosticsEnabled", mConfig.performance.diagnosticsEnabled}
     };
     j["safety"] = {
-        {"safeMode",                mConfig.safety.safeMode},
-        {"enableExperimentalHooks", mConfig.safety.enableExperimentalHooks},
-        {"enablePassiveReadHook",   mConfig.safety.enablePassiveReadHook}
+        {"safeMode",                    mConfig.safety.safeMode},
+        {"enableExperimentalHooks",     mConfig.safety.enableExperimentalHooks},
+        {"enablePassiveReadHook",       mConfig.safety.enablePassiveReadHook},
+        {"enableMaterialRedirectDryRun", mConfig.safety.enableMaterialRedirectDryRun}
     };
 
     // Escritura atómica mediante archivo temporal con identificador exclusivo
