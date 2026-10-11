@@ -77,34 +77,17 @@ std::string* readFileDetour(void* self, std::string* result, Core::PathView* pat
         return result;
     }
 
+    // 1. Delegación incondicional a la función original de Minecraft (argumentos y resultados 100% intactos)
     std::string* ret = g_readFileOriginal(self, result, path);
     if (ret == nullptr || path == nullptr) {
         return ret;
     }
 
-    // Bypass inmediato si no hay shaderpack activo o si el cargador está en modo vainilla
-    if (!MaterialLoader::getInstance().isOverrideActive()) {
-        return ret;
-    }
-
+    // 2. Etapa 3.2: Observación pasiva estricta. Jamás modificar los bytes devueltos.
     try {
-        auto overrideBytes = MaterialLoader::getInstance().resolveMaterial(path->getUtf8StringView());
-        if (overrideBytes.has_value() && !overrideBytes->empty()) {
-            ret->assign(reinterpret_cast<char const*>(overrideBytes->data()), overrideBytes->size());
-
-            static std::atomic<int> logged{0};
-            if (logged.fetch_add(1) < 5) {
-                if (auto mod = ll::mod::NativeMod::current()) {
-                    mod->getLogger().info(
-                        "[MaterialHooks] Overrode '{}' ({} bytes)",
-                        path->getUtf8StringView(),
-                        overrideBytes->size()
-                    );
-                }
-            }
-        }
+        MaterialHooks::getInstance().recordPassiveRead(path->getUtf8StringView(), ret->size());
     } catch (...) {
-        // Fail open: jamás lanzar excepciones a través de los límites del hook del juego
+        // Protección total ante cualquier excepción en límites de llamada del juego
     }
 
     return ret;
@@ -178,9 +161,41 @@ bool MaterialHooks::areSignaturesVerified() const {
     return mSignaturesVerified;
 }
 
+bool MaterialHooks::isPassiveHookActive() const {
+    std::lock_guard lock(mMutex);
+    return mPassiveHookActive;
+}
+
 bool MaterialHooks::isReloadAvailable() const {
     std::lock_guard lock(mMutex);
     return mReloadAvailable;
+}
+
+uint64_t MaterialHooks::passiveReadCount() const {
+    return mPassiveReadCount.load(std::memory_order_relaxed);
+}
+
+uint64_t MaterialHooks::materialBinReadCount() const {
+    return mMaterialBinReadCount.load(std::memory_order_relaxed);
+}
+
+void MaterialHooks::recordPassiveRead(std::string_view pathStr, size_t bytesRead) {
+    mPassiveReadCount.fetch_add(1, std::memory_order_relaxed);
+
+    if (pathStr.ends_with(".material.bin")) {
+        mMaterialBinReadCount.fetch_add(1, std::memory_order_relaxed);
+
+        static std::atomic<int> logged{0};
+        if (logged.fetch_add(1) < 5) {
+            if (auto mod = ll::mod::NativeMod::current()) {
+                mod->getLogger().info(
+                    "[PassiveReadHook] Observed material request: '{}' (vanilla size: {} bytes)",
+                    pathStr,
+                    bytesRead
+                );
+            }
+        }
+    }
 }
 
 std::string MaterialHooks::lastError() const {
@@ -400,10 +415,10 @@ bool MaterialHooks::install() {
     // 1. Ejecutar análisis y verificación rigurosa de firmas
     verifySignaturesLocked();
 
-    // 2. MODO SEGURO: Ganchos experimentales desactivados por defecto
+    // 2. Control de configuración de la Etapa 3.2: Hook pasivo desactivado por defecto
     auto const& safety = ConfigManager::getInstance().config().safety;
-    if (safety.safeMode || !safety.enableExperimentalHooks) {
-        mLastError = "RenderDragon native hooks disabled (safe mode active)";
+    if (safety.safeMode || !safety.enablePassiveReadHook) {
+        mLastError = "Passive readFile hook disabled by configuration (safeMode=true or enablePassiveReadHook=false)";
         logger.info("MaterialHooks: {}. Signatures verified diagnostically; memory remains untouched.", mLastError);
         return false;
     }
@@ -423,7 +438,9 @@ bool MaterialHooks::install() {
         return false;
     }
 
-    // Instalar hook de readFile
+    // 5. Etapa 3.2: Instalar EXCLUSIVAMENTE el hook pasivo de readFile
+    // Prototipo verificado: std::string* (*)(void* self, std::string* result, Core::PathView* path)
+    // Convención: x64 Microsoft fastcall (RCX: self, RDX: result, R8: path, RAX: ret)
     ll::memory::hook(
         g_readFileTarget,
         ll::memory::toFuncPtr(&readFileDetour),
@@ -442,32 +459,20 @@ bool MaterialHooks::install() {
         return false;
     }
 
-    logger.info("MaterialHooks: readFile detour hooked successfully at {:#x}", reinterpret_cast<uintptr_t>(g_readFileTarget));
+    logger.info("MaterialHooks: Passive readFile detour hooked successfully at {:#x}", reinterpret_cast<uintptr_t>(g_readFileTarget));
     CompatibilityManager::getInstance().setCapabilityState(
         FeatureCapability::MaterialRedirection,
         CapabilityState::Supported,
-        "readFile detour installed"
+        "cmd.info.reason.passive_observation"
     );
 
-    // 5. endFrame hook
-    auto endDiag = CompatibilityManager::getInstance().getSignatureDiagnostic("endFrame");
-    if (endDiag.has_value() && endDiag->status == SignatureStatus::Verified && g_endFrameTarget != nullptr) {
-        ll::memory::hook(
-            g_endFrameTarget,
-            ll::memory::toFuncPtr(&endFrameDetour),
-            reinterpret_cast<ll::memory::FuncPtr*>(&g_endFrameOriginal),
-            ll::memory::HookPriority::Normal
-        );
+    // 6. En Etapa 3.2, endFrame, reloadMaterial y GraphicsMode se mantienen estrictamente DESACTIVADOS
+    g_endFrameTarget = nullptr;
+    g_reloadMaterial = nullptr;
+    mReloadAvailable = false;
 
-        if (g_endFrameOriginal != nullptr) {
-            logger.info("MaterialHooks: endFrame detour hooked successfully");
-        } else {
-            logger.warn("MaterialHooks: endFrame hook installation failed");
-        }
-    }
-
-    mInstalled       = true;
-    mReloadAvailable = (g_reloadMaterial != nullptr && g_endFrameOriginal != nullptr);
+    mInstalled          = true;
+    mPassiveHookActive  = true;
     return true;
 
 #else
@@ -500,6 +505,7 @@ void MaterialHooks::uninstall() {
 
     mInstalled          = false;
     mSignaturesVerified = false;
+    mPassiveHookActive  = false;
     mReloadAvailable    = false;
     mReloadPending      = false;
 }

@@ -142,5 +142,6 @@
     "cmd.info.reason.ambiguous": "Firma ambigua (múltiples coincidencias detectadas)",
     "cmd.info.reason.invalid_memory": "Dirección resuelta en región inválida/no ejecutable",
     "cmd.info.reason.incompatible_version": "Discrepancia con versión objetivo",
-    "cmd.info.reason.safemode_verified": "Verificado (modo seguro activo, hooks desconectados)"
+    "cmd.info.reason.safemode_verified": "Verificado (modo seguro activo, hooks desconectados)",
+    "cmd.info.reason.passive_observation": "Observación pasiva activa (hook de lectura sin modificaciones)"
 }

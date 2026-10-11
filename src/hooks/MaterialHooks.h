@@ -45,8 +45,13 @@ public:
 
     [[nodiscard]] bool isInstalled() const;
     [[nodiscard]] bool areSignaturesVerified() const;
+    [[nodiscard]] bool isPassiveHookActive() const;
     [[nodiscard]] bool isReloadAvailable() const;
+    [[nodiscard]] uint64_t passiveReadCount() const;
+    [[nodiscard]] uint64_t materialBinReadCount() const;
     [[nodiscard]] std::string lastError() const;
+
+    void recordPassiveRead(std::string_view pathStr, size_t bytesRead);
 
     /**
      * @brief Queues a material cache flush to execute on the client render thread at the next endFrame.
@@ -63,12 +68,15 @@ private:
 
     void verifySignaturesLocked();
 
-    mutable std::recursive_mutex mMutex;
-    bool               mInstalled          = false;
-    bool               mSignaturesVerified = false;
-    bool               mReloadAvailable    = false;
-    bool               mReloadPending      = false;
-    std::string        mLastError;
+    mutable std::mutex mMutex;
+    bool                  mInstalled          = false;
+    bool                  mSignaturesVerified = false;
+    bool                  mPassiveHookActive  = false;
+    bool                  mReloadAvailable    = false;
+    bool                  mReloadPending      = false;
+    std::atomic<uint64_t> mPassiveReadCount{0};
+    std::atomic<uint64_t> mMaterialBinReadCount{0};
+    std::string           mLastError;
 };
 
 } // namespace aeris

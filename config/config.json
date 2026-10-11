@@ -7,7 +7,7 @@
     "generatedDir": "generated",
     "ui": {
         "shortcut": "G",
-        "backdrop": 0.0,
+        "backdrop": 0,
         "theme": "dark"
     },
     "shaders": {
@@ -19,6 +19,7 @@
     },
     "safety": {
         "safeMode": true,
-        "enableExperimentalHooks": false
+        "enableExperimentalHooks": false,
+        "enablePassiveReadHook": false
     }
 }

@@ -32,6 +32,7 @@ struct Config {
     struct SafetyConfig {
         bool safeMode                = true;  // Safe mode on by default
         bool enableExperimentalHooks = false; // Native hooks disabled by default until verified
+        bool enablePassiveReadHook   = false; // Passive readFile observation hook (Etapa 3.2, disabled by default)
     } safety;
 };
 

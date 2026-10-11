@@ -142,5 +142,6 @@
     "cmd.info.reason.ambiguous": "Ambiguous signature (multiple matches detected)",
     "cmd.info.reason.invalid_memory": "Resolved address in invalid/non-executable region",
     "cmd.info.reason.incompatible_version": "Target version mismatch",
-    "cmd.info.reason.safemode_verified": "Verified (safe mode active, hooks detached)"
+    "cmd.info.reason.safemode_verified": "Verified (safe mode active, hooks detached)",
+    "cmd.info.reason.passive_observation": "Passive observation active (non-modifying read hook)"
 }

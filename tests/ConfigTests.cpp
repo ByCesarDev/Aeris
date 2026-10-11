@@ -69,6 +69,7 @@ void runConfigTests() {
     // 8. Modo seguro y ganchos experimentales desactivados por defecto
     check(mgr.config().safety.safeMode == true, "Safe mode must be enabled by default");
     check(mgr.config().safety.enableExperimentalHooks == false, "Experimental hooks must be disabled by default");
+    check(mgr.config().safety.enablePassiveReadHook == false, "Passive read hook must be disabled by default");
 
     std::filesystem::remove_all(testDir);
 }

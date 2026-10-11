@@ -846,8 +846,8 @@ Este checklist es la guía operativa viva de desarrollo para seguir el avance de
   - [X] Implementar `AerisMod.cpp` (registro en el runtime de LeviLamina con hooks de ciclo de vida).
 - [X] **Capa de Compatibilidad (`CompatibilityManager`)**
   - [X] Detección segura de la versión en tiempo de ejecución de Minecraft Bedrock.
-  - [ ] Verificación y validación estricta de firmas en memoria antes de aplicar cualquier hook.
-  - [ ] Fallback seguro: si una firma no coincide, desactivar funciones dependientes sin crashear el juego.
+  - [X] Verificación y validación estricta de firmas en memoria antes de aplicar cualquier hook.
+  - [X] Fallback seguro: si una firma no coincide, desactivar funciones dependientes sin crashear el juego.
 - [ ] **Comandos de Chat y Teclas de Acceso Rápido**
   - [X] Registrar comando raíz `/aeris` con subcomandos: `ui`, `scan`, `list`, `rollback`, `key`, `help`.
   - [ ] Manejo de atajo de teclado global configurable (por defecto tecla `G`) con liberación limpia de inputs.
@@ -941,7 +941,7 @@ Este checklist es la guía operativa viva de desarrollo para seguir el avance de
 - [X] **Motor de Localización (`LocalizationManager`)**
   - [X] Soporte UTF-8 completo.
   - [X] Búsqueda por claves con fallback inmediato a inglés si falta una clave.
-  - [ ] Soporte para interpolación de parámetros (`{0}`, `{1}`).
+  - [X] Soporte para interpolación de parámetros (`{0}`, `{1}`).
   - [X] Cero strings de usuario hardcodeados en el código C++.
   - [X] Exclusión total de idiomas no contemplados (sin chino ni textos heredados sin traducir).
 
@@ -979,7 +979,7 @@ Este checklist es la guía operativa viva de desarrollo para seguir el avance de
   - [x] Pruebas del motor de localización (fallback de idiomas, sustitución de variables y formato posicional).
   - [X] Pruebas de resolución de rutas de materiales precompilados.
 - [ ] **Plan de Pruebas en Juego (Validación Manual)**
-  - [ ] Checklist de verificación en cliente Minecraft con registro de SHA-256 de DLL compilada.
+  - [X] Checklist de verificación en cliente Minecraft con registro de SHA-256 de DLL compilada (Validación Etapa 3.1).
   - [ ] Prueba de apertura y cierre de interfaz sin bloqueo de ratón ni pérdida de controles.
   - [ ] Prueba de importación de packs por archivo y drag & drop.
   - [ ] Prueba de activación de shader precompilado y cambio automático de modo gráfico.

@@ -162,6 +162,9 @@ bool ConfigManager::load(std::filesystem::path const& configFile) {
             if (s.contains("enableExperimentalHooks")) {
                 candidate.safety.enableExperimentalHooks = s["enableExperimentalHooks"].get<bool>();
             }
+            if (s.contains("enablePassiveReadHook")) {
+                candidate.safety.enablePassiveReadHook = s["enablePassiveReadHook"].get<bool>();
+            }
         }
     } catch (std::exception const& e) {
         mLastError = std::string("Type error reading config fields: ") + e.what();
@@ -223,7 +226,8 @@ bool ConfigManager::save() const {
     };
     j["safety"] = {
         {"safeMode",                mConfig.safety.safeMode},
-        {"enableExperimentalHooks", mConfig.safety.enableExperimentalHooks}
+        {"enableExperimentalHooks", mConfig.safety.enableExperimentalHooks},
+        {"enablePassiveReadHook",   mConfig.safety.enablePassiveReadHook}
     };
 
     // Escritura atómica mediante archivo temporal con identificador exclusivo
