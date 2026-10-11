@@ -30,10 +30,16 @@ struct Config {
     } performance;
 
     struct SafetyConfig {
-        bool safeMode                    = true;  // Safe mode on by default
-        bool enableExperimentalHooks     = false; // Native hooks disabled by default until verified
-        bool enablePassiveReadHook       = false; // Passive readFile observation hook (Etapa 3.2, disabled by default)
+        bool safeMode                     = true;  // Safe mode on by default
+        bool enableExperimentalHooks      = false; // Native hooks disabled by default until verified
+        bool enablePassiveReadHook        = false; // Passive readFile observation hook (Etapa 3.2, disabled by default)
         bool enableMaterialRedirectDryRun = false; // Dry-run simulation of material redirection (Etapa 3.3, disabled by default)
+        bool enableActiveMaterialOverride = false; // Active material substitution (Etapa 3.4, disabled by default)
+        std::vector<std::string> authorizedOverrideMaterials = {
+            "UIBlit.material.bin",
+            "Cubemap.material.bin",
+            "CubemapHDRi.material.bin"
+        };
     } safety;
 };
 

@@ -84,19 +84,31 @@ std::string* readFileDetour(void* self, std::string* result, Core::PathView* pat
     }
 
     try {
-        // 2. Observación pasiva (Etapa 3.2)
-        MaterialHooks::getInstance().recordPassiveRead(path->getUtf8StringView(), ret->size());
+        auto pathStr = path->getUtf8StringView();
+        if (!pathStr.ends_with(".material.bin")) {
+            return ret;
+        }
 
-        // 3. Simulación Dry-Run (Etapa 3.3) si está habilitada por configuración
+        // 2. Observación pasiva segura: registrar lecturas de materiales
+        MaterialHooks::getInstance().recordPassiveRead(pathStr, ret->size());
+
         auto const& safety = ConfigManager::getInstance().config().safety;
+
+        // 3. Simulación Dry-Run (Etapa 3.3): registrar match/miss y devolver vanilla intacto
         if (!safety.safeMode && safety.enableMaterialRedirectDryRun) {
-            MaterialHooks::getInstance().recordDryRunCheck(path->getUtf8StringView(), ret->size());
+            MaterialHooks::getInstance().recordDryRunCheck(pathStr, ret->size());
+            return ret;
+        }
+
+        // 4. Sustitución Activa (Etapa 3.4): solo si está explícitamente habilitada y en modo seguro = false
+        if (!safety.safeMode && safety.enableActiveMaterialOverride) {
+            MaterialHooks::getInstance().tryApplyMaterialOverride(ret, pathStr);
         }
     } catch (...) {
-        // Protección total ante cualquier excepción en límites de llamada del juego
+        // Protección total ante cualquier excepción: fallback seguro a bytes vainilla
     }
 
-    // 4. Devolver siempre el resultado original de Minecraft sin modificar bytes
+    // Devolver resultado (original o sustituido)
     return ret;
 }
 
@@ -176,6 +188,72 @@ bool MaterialHooks::isPassiveHookActive() const {
 bool MaterialHooks::isDryRunActive() const {
     std::lock_guard lock(mMutex);
     return mDryRunActive;
+}
+
+bool MaterialHooks::isOverrideActive() const {
+    std::lock_guard lock(mMutex);
+    return mOverrideActive;
+}
+
+uint64_t MaterialHooks::activeSubstitutions() const {
+    return MaterialLoader::getInstance().activeSubstitutions();
+}
+
+uint64_t MaterialHooks::validationErrors() const {
+    return MaterialLoader::getInstance().validationErrors();
+}
+
+void MaterialHooks::tryApplyMaterialOverride(std::string* ret, std::string_view pathStr) {
+    if (ret == nullptr) return;
+
+    auto canonicalName = MaterialLoader::normalizeMaterialName(pathStr);
+    if (canonicalName.empty()) {
+        return;
+    }
+
+    // 1. Comprobar lista explícita de materiales autorizados (whitelist de seguridad)
+    if (!MaterialLoader::isMaterialAuthorized(canonicalName)) {
+        return; // No autorizado para reemplazo experimental: fallback vanilla
+    }
+
+    // 2. Buscar en el índice inmutable pre-cargado
+    auto entry = MaterialLoader::getInstance().findMaterial(pathStr);
+    if (!entry.has_value()) {
+        return; // Sin reemplazo en el shaderpack activo: fallback vanilla
+    }
+
+    // 3. Comprobar validación de formato binario RenderDragon
+    if (!entry->isValidMaterial || entry->binaryData.empty()) {
+        MaterialLoader::getInstance().recordValidationError();
+        static std::atomic<int> sLoggedValErrors{0};
+        if (sLoggedValErrors.fetch_add(1) < 5) {
+            if (auto mod = ll::mod::NativeMod::current()) {
+                mod->getLogger().warn(
+                    "[MaterialOverride] REJECTED: '{}' failed binary header validation; fallback to vanilla",
+                    pathStr
+                );
+            }
+        }
+        return;
+    }
+
+    // 4. Sustitución efectiva de bytes en memoria (cero syscalls a disco)
+    size_t vanillaSize = ret->size();
+    ret->assign(reinterpret_cast<const char*>(entry->binaryData.data()), entry->binaryData.size());
+    MaterialLoader::getInstance().recordActiveSubstitution();
+
+    static std::atomic<int> sLoggedOverrides{0};
+    if (sLoggedOverrides.fetch_add(1) < 5) {
+        if (auto mod = ll::mod::NativeMod::current()) {
+            mod->getLogger().info(
+                "[MaterialOverride] SUBSTITUTED: '{}' -> Delivered {} bytes from pack '{}' (vanilla was {} bytes)",
+                pathStr,
+                entry->binaryData.size(),
+                entry->packName,
+                vanillaSize
+            );
+        }
+    }
 }
 
 uint64_t MaterialHooks::dryRunMatches() const {
@@ -473,7 +551,9 @@ bool MaterialHooks::install() {
 
     // 2. Control de configuración: Hook experimental desactivado por defecto
     auto const& safety = ConfigManager::getInstance().config().safety;
-    bool allowHook = (!safety.safeMode && (safety.enablePassiveReadHook || safety.enableMaterialRedirectDryRun));
+    bool allowHook = (!safety.safeMode && (safety.enablePassiveReadHook
+                                        || safety.enableMaterialRedirectDryRun
+                                        || safety.enableActiveMaterialOverride));
     if (!allowHook) {
         mLastError = "Material hooks disabled by configuration (safeMode=true or experimental hooks disabled)";
         logger.info("MaterialHooks: {}. Signatures verified diagnostically; memory remains untouched.", mLastError);
@@ -520,6 +600,7 @@ bool MaterialHooks::install() {
     mInstalled         = true;
     mPassiveHookActive = safety.enablePassiveReadHook;
     mDryRunActive      = safety.enableMaterialRedirectDryRun;
+    mOverrideActive    = safety.enableActiveMaterialOverride;
 
     CompatibilityManager::getInstance().setCapabilityState(
         FeatureCapability::MaterialRedirection,

@@ -1,21 +1,76 @@
 #include "shaders/MaterialLoader.h"
 
 #include <algorithm>
+#include <cstring>
 #include <fstream>
 #include <system_error>
 
+#include "core/ConfigManager.h"
+
 namespace aeris {
+
+namespace {
+
+constexpr std::string_view kExpectedTypeName = "RenderDragon.CompiledMaterialDefinition";
+
+} // namespace
 
 MaterialLoader& MaterialLoader::getInstance() {
     static MaterialLoader instance;
     return instance;
 }
 
+bool MaterialLoader::validateMaterialBinary(std::span<const uint8_t> data, std::string* outError) {
+    if (data.size() < kRenderDragonHeaderMin) {
+        if (outError) *outError = "Material buffer smaller than minimum RenderDragon header (51 bytes)";
+        return false;
+    }
+
+    // 1. Verificar Magic: 0x0a11da1a (1A DA 11 0A)
+    uint32_t magic = static_cast<uint32_t>(data[0])
+                   | (static_cast<uint32_t>(data[1]) << 8)
+                   | (static_cast<uint32_t>(data[2]) << 16)
+                   | (static_cast<uint32_t>(data[3]) << 24);
+    if (magic != kRenderDragonMagic) {
+        if (outError) *outError = "Invalid magic number (expected RenderDragon 0x0A11DA1A)";
+        return false;
+    }
+
+    // 2. Longitud de cadena en offset 8 (uint32 Little Endian = 39)
+    uint32_t strLen = static_cast<uint32_t>(data[8])
+                    | (static_cast<uint32_t>(data[9]) << 8)
+                    | (static_cast<uint32_t>(data[10]) << 16)
+                    | (static_cast<uint32_t>(data[11]) << 24);
+    if (strLen != kExpectedTypeName.size() || (12 + strLen) > data.size()) {
+        if (outError) *outError = "Invalid type name length in material header";
+        return false;
+    }
+
+    // 3. Cadena de tipo de definición en offset 12
+    std::string_view typeName(reinterpret_cast<const char*>(data.data() + 12), strLen);
+    if (typeName != kExpectedTypeName) {
+        if (outError) *outError = "Type name mismatch (expected 'RenderDragon.CompiledMaterialDefinition')";
+        return false;
+    }
+
+    return true;
+}
+
+bool MaterialLoader::isMaterialAuthorized(std::string_view canonicalName) {
+    auto const& authList = ConfigManager::getInstance().config().safety.authorizedOverrideMaterials;
+    for (auto const& auth : authList) {
+        if (canonicalName == auth) {
+            return true;
+        }
+    }
+    return false;
+}
+
 void MaterialLoader::setActiveShaderPack(std::string packName, std::vector<std::filesystem::path> prebuiltDirs) {
     auto newIndex = std::make_shared<IndexMap>();
     std::error_code ec;
 
-    // Pre-indexación inmutable: escanear directorios ordenados y construir mapa en memoria
+    // Pre-indexación y pre-carga inmutable: escanear directorios y cargar bytes en memoria
     for (auto const& dir : prebuiltDirs) {
         if (!std::filesystem::is_directory(dir, ec)) {
             continue;
@@ -52,11 +107,24 @@ void MaterialLoader::setActiveShaderPack(std::string packName, std::vector<std::
                 continue;
             }
 
+            // Pre-carga binaria completa en memoria (evita syscalls en el hook de renderizado)
+            std::ifstream file(normalCandidate, std::ios::binary);
+            if (!file.is_open()) continue;
+
+            std::vector<uint8_t> buffer(static_cast<size_t>(fileSize));
+            file.read(reinterpret_cast<char*>(buffer.data()), static_cast<std::streamsize>(fileSize));
+            if (!file && !file.eof()) continue;
+
+            // Validación rigurosa de cabecera binaria RenderDragon
+            bool isValid = validateMaterialBinary(buffer);
+
             MaterialEntry matEntry;
-            matEntry.canonicalName = canonicalName;
-            matEntry.diskPath      = normalCandidate;
-            matEntry.fileSize      = static_cast<size_t>(fileSize);
-            matEntry.packName      = packName;
+            matEntry.canonicalName   = canonicalName;
+            matEntry.diskPath        = normalCandidate;
+            matEntry.fileSize        = static_cast<size_t>(fileSize);
+            matEntry.packName        = packName;
+            matEntry.binaryData      = std::move(buffer);
+            matEntry.isValidMaterial = isValid;
 
             (*newIndex)[canonicalName] = std::move(matEntry);
         }
@@ -112,7 +180,7 @@ std::string MaterialLoader::normalizeMaterialName(std::string_view requestPath) 
         return "";
     }
 
-    // Rechazar path traversal
+    // Rechazar path traversal y bytes nulos
     if (normalized.find("..") != std::string::npos || normalized.find('\0') != std::string::npos) {
         return "";
     }
@@ -161,23 +229,7 @@ std::optional<std::vector<uint8_t>> MaterialLoader::resolveMaterial(std::string_
     }
 
     auto entry = findMaterial(requestPath);
-    if (!entry.has_value()) {
-        std::lock_guard lock(mMutex);
-        mTotalFallbacks++;
-        return std::nullopt;
-    }
-
-    // Lectura binaria segura del archivo pre-indexado
-    std::ifstream file(entry->diskPath, std::ios::binary);
-    if (!file.is_open()) {
-        std::lock_guard lock(mMutex);
-        mTotalFallbacks++;
-        return std::nullopt;
-    }
-
-    std::vector<uint8_t> buffer(entry->fileSize);
-    file.read(reinterpret_cast<char*>(buffer.data()), static_cast<std::streamsize>(entry->fileSize));
-    if (!file && !file.eof()) {
+    if (!entry.has_value() || !entry->isValidMaterial || entry->binaryData.empty()) {
         std::lock_guard lock(mMutex);
         mTotalFallbacks++;
         return std::nullopt;
@@ -189,7 +241,7 @@ std::optional<std::vector<uint8_t>> MaterialLoader::resolveMaterial(std::string_
         mLastResolvedMaterial = entry->canonicalName;
     }
 
-    return buffer;
+    return entry->binaryData;
 }
 
 size_t MaterialLoader::totalRequests() const {
@@ -215,12 +267,28 @@ uint64_t MaterialLoader::dryRunMisses() const {
     return mDryRunMisses.load(std::memory_order_relaxed);
 }
 
+uint64_t MaterialLoader::activeSubstitutions() const {
+    return mActiveSubstitutions.load(std::memory_order_relaxed);
+}
+
+uint64_t MaterialLoader::validationErrors() const {
+    return mValidationErrors.load(std::memory_order_relaxed);
+}
+
 void MaterialLoader::recordDryRunMatch() {
     mDryRunMatches.fetch_add(1, std::memory_order_relaxed);
 }
 
 void MaterialLoader::recordDryRunMiss() {
     mDryRunMisses.fetch_add(1, std::memory_order_relaxed);
+}
+
+void MaterialLoader::recordActiveSubstitution() {
+    mActiveSubstitutions.fetch_add(1, std::memory_order_relaxed);
+}
+
+void MaterialLoader::recordValidationError() {
+    mValidationErrors.fetch_add(1, std::memory_order_relaxed);
 }
 
 std::string MaterialLoader::lastResolvedMaterial() const {
@@ -235,6 +303,8 @@ void MaterialLoader::resetStats() {
     mTotalFallbacks = 0;
     mDryRunMatches.store(0, std::memory_order_relaxed);
     mDryRunMisses.store(0, std::memory_order_relaxed);
+    mActiveSubstitutions.store(0, std::memory_order_relaxed);
+    mValidationErrors.store(0, std::memory_order_relaxed);
     mLastResolvedMaterial.clear();
 }
 

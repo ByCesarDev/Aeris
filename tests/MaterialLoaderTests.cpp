@@ -65,16 +65,29 @@ void runMaterialLoaderTests() {
     std::filesystem::create_directories(pack1Dir);
     std::filesystem::create_directories(pack2Dir);
 
+    auto makeValidMaterialBytes = [](std::initializer_list<uint8_t> payload) {
+        std::vector<uint8_t> b(51 + payload.size(), 0);
+        b[0] = 0x1a; b[1] = 0xda; b[2] = 0x11; b[3] = 0x0a;
+        b[8] = 39;
+        std::string_view typeStr = "RenderDragon.CompiledMaterialDefinition";
+        std::memcpy(b.data() + 12, typeStr.data(), typeStr.size());
+        size_t idx = 0;
+        for (auto val : payload) {
+            b[51 + idx++] = val;
+        }
+        return b;
+    };
+
     // Crear material A en pack1
-    std::vector<uint8_t> chunkBytes = {0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC};
+    std::vector<uint8_t> chunkBytes = makeValidMaterialBytes({0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC});
     {
         std::ofstream out(pack1Dir / "RenderChunk.material.bin", std::ios::binary);
         out.write(reinterpret_cast<char const*>(chunkBytes.data()), static_cast<std::streamsize>(chunkBytes.size()));
     }
 
     // Crear material B en ambos packs (pack1 tiene prioridad)
-    std::vector<uint8_t> skyBytes1 = {0xAA, 0xBB};
-    std::vector<uint8_t> skyBytes2 = {0xCC, 0xDD};
+    std::vector<uint8_t> skyBytes1 = makeValidMaterialBytes({0xAA, 0xBB});
+    std::vector<uint8_t> skyBytes2 = makeValidMaterialBytes({0xCC, 0xDD});
     {
         std::ofstream out(pack1Dir / "Sky.material.bin", std::ios::binary);
         out.write(reinterpret_cast<char const*>(skyBytes1.data()), static_cast<std::streamsize>(skyBytes1.size()));
@@ -85,7 +98,7 @@ void runMaterialLoaderTests() {
     }
 
     // Crear material C exclusivamente en pack2
-    std::vector<uint8_t> cloudsBytes2 = {0x55, 0x66, 0x77};
+    std::vector<uint8_t> cloudsBytes2 = makeValidMaterialBytes({0x55, 0x66, 0x77});
     {
         std::ofstream out(pack2Dir / "Clouds.material.bin", std::ios::binary);
         out.write(reinterpret_cast<char const*>(cloudsBytes2.data()), static_cast<std::streamsize>(cloudsBytes2.size()));
@@ -210,6 +223,64 @@ void runMaterialLoaderTests() {
     loader.recordDryRunMiss();
     check(loader.dryRunMatches() == 2, "dryRunMatches must record 2 matches");
     check(loader.dryRunMisses() == 1, "dryRunMisses must record 1 miss");
+
+    // =========================================================================
+    // 8. Pruebas de la Etapa 3.4: Validación binaria real de RenderDragon y whitelist
+    // =========================================================================
+    // Buffer válido: magic (0x0a11da1a) + version (0) + len (39) + "RenderDragon.CompiledMaterialDefinition" + payload
+    std::vector<uint8_t> validBinary(51 + 10, 0);
+    validBinary[0] = 0x1a;
+    validBinary[1] = 0xda;
+    validBinary[2] = 0x11;
+    validBinary[3] = 0x0a;
+    validBinary[8] = 39;
+    std::string_view typeStr = "RenderDragon.CompiledMaterialDefinition";
+    std::memcpy(validBinary.data() + 12, typeStr.data(), typeStr.size());
+
+    std::string valErr;
+    check(aeris::MaterialLoader::validateMaterialBinary(validBinary, &valErr),
+        "Valid RenderDragon material binary must pass validation");
+
+    // Buffer demasiado corto (< 51 bytes)
+    std::vector<uint8_t> shortBinary(40, 0);
+    check(!aeris::MaterialLoader::validateMaterialBinary(shortBinary, &valErr),
+        "Buffer shorter than 51 bytes must fail validation");
+
+    // Magic corrupto
+    auto corruptMagic = validBinary;
+    corruptMagic[0] = 0xFF;
+    check(!aeris::MaterialLoader::validateMaterialBinary(corruptMagic, &valErr),
+        "Buffer with corrupted magic must fail validation");
+
+    // Tipo corrupto
+    auto corruptType = validBinary;
+    corruptType[12] = 'X';
+    check(!aeris::MaterialLoader::validateMaterialBinary(corruptType, &valErr),
+        "Buffer with corrupted type string must fail validation");
+
+    // Longitud de tipo incoherente
+    auto corruptLen = validBinary;
+    corruptLen[8] = 10;
+    check(!aeris::MaterialLoader::validateMaterialBinary(corruptLen, &valErr),
+        "Buffer with mismatched type string length must fail validation");
+
+    // Whitelist de materiales autorizados
+    check(aeris::MaterialLoader::isMaterialAuthorized("UIBlit.material.bin"),
+        "UIBlit.material.bin must be authorized in default whitelist");
+    check(aeris::MaterialLoader::isMaterialAuthorized("Cubemap.material.bin"),
+        "Cubemap.material.bin must be authorized in default whitelist");
+    check(!aeris::MaterialLoader::isMaterialAuthorized("UnauthorizedShaders.material.bin"),
+        "Unauthorized material must be rejected by whitelist");
+
+    // Métricas y contadores de la Etapa 3.4
+    check(loader.activeSubstitutions() == 0, "Initial activeSubstitutions must be 0");
+    check(loader.validationErrors() == 0, "Initial validationErrors must be 0");
+
+    loader.recordActiveSubstitution();
+    loader.recordActiveSubstitution();
+    loader.recordValidationError();
+    check(loader.activeSubstitutions() == 2, "activeSubstitutions must record 2 substitutions");
+    check(loader.validationErrors() == 1, "validationErrors must record 1 error");
 
     loader.restoreVanilla();
 

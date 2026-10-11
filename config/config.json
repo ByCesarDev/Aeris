@@ -21,6 +21,12 @@
         "safeMode": true,
         "enableExperimentalHooks": false,
         "enablePassiveReadHook": false,
-        "enableMaterialRedirectDryRun": false
+        "enableMaterialRedirectDryRun": false,
+        "enableActiveMaterialOverride": false,
+        "authorizedOverrideMaterials": [
+            "UIBlit.material.bin",
+            "Cubemap.material.bin",
+            "CubemapHDRi.material.bin"
+        ]
     }
 }

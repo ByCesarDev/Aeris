@@ -232,6 +232,8 @@ bool AerisMod::enable() {
                     std::string redirStatusDisplay;
                     if (!hooks.isInstalled()) {
                         redirStatusDisplay = tr("cmd.info.redir.detached");
+                    } else if (hooks.isOverrideActive()) {
+                        redirStatusDisplay = tr("cmd.info.redir.active");
                     } else if (hooks.isDryRunActive()) {
                         redirStatusDisplay = tr("cmd.info.redir.dry_run");
                     } else if (hooks.isPassiveHookActive()) {
@@ -243,12 +245,21 @@ bool AerisMod::enable() {
 
                     // 4. Telemetría de Lecturas
                     if (hooks.isInstalled()) {
-                        output.success(trFormat("cmd.info.telemetry", {
-                            std::to_string(hooks.passiveReadCount()),
-                            std::to_string(hooks.materialBinReadCount()),
-                            std::to_string(hooks.dryRunMatches()),
-                            std::to_string(hooks.dryRunMisses())
-                        }));
+                        if (hooks.isOverrideActive()) {
+                            output.success(trFormat("cmd.info.telemetryActive", {
+                                std::to_string(hooks.passiveReadCount()),
+                                std::to_string(hooks.materialBinReadCount()),
+                                std::to_string(hooks.activeSubstitutions()),
+                                std::to_string(hooks.validationErrors())
+                            }));
+                        } else {
+                            output.success(trFormat("cmd.info.telemetry", {
+                                std::to_string(hooks.passiveReadCount()),
+                                std::to_string(hooks.materialBinReadCount()),
+                                std::to_string(hooks.dryRunMatches()),
+                                std::to_string(hooks.dryRunMisses())
+                            }));
+                        }
                     }
 
                     auto hotState  = compat.getCapabilityState(FeatureCapability::MaterialHotReload);

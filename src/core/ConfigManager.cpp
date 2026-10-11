@@ -168,6 +168,12 @@ bool ConfigManager::load(std::filesystem::path const& configFile) {
             if (s.contains("enableMaterialRedirectDryRun")) {
                 candidate.safety.enableMaterialRedirectDryRun = s["enableMaterialRedirectDryRun"].get<bool>();
             }
+            if (s.contains("enableActiveMaterialOverride")) {
+                candidate.safety.enableActiveMaterialOverride = s["enableActiveMaterialOverride"].get<bool>();
+            }
+            if (s.contains("authorizedOverrideMaterials") && s["authorizedOverrideMaterials"].is_array()) {
+                candidate.safety.authorizedOverrideMaterials = s["authorizedOverrideMaterials"].get<std::vector<std::string>>();
+            }
         }
     } catch (std::exception const& e) {
         mLastError = std::string("Type error reading config fields: ") + e.what();
@@ -228,10 +234,12 @@ bool ConfigManager::save() const {
         {"diagnosticsEnabled", mConfig.performance.diagnosticsEnabled}
     };
     j["safety"] = {
-        {"safeMode",                    mConfig.safety.safeMode},
-        {"enableExperimentalHooks",     mConfig.safety.enableExperimentalHooks},
-        {"enablePassiveReadHook",       mConfig.safety.enablePassiveReadHook},
-        {"enableMaterialRedirectDryRun", mConfig.safety.enableMaterialRedirectDryRun}
+        {"safeMode",                     mConfig.safety.safeMode},
+        {"enableExperimentalHooks",      mConfig.safety.enableExperimentalHooks},
+        {"enablePassiveReadHook",        mConfig.safety.enablePassiveReadHook},
+        {"enableMaterialRedirectDryRun",  mConfig.safety.enableMaterialRedirectDryRun},
+        {"enableActiveMaterialOverride",  mConfig.safety.enableActiveMaterialOverride},
+        {"authorizedOverrideMaterials",  mConfig.safety.authorizedOverrideMaterials}
     };
 
     // Escritura atómica mediante archivo temporal con identificador exclusivo

@@ -148,10 +148,11 @@
     "cmd.info.redir.detached": "§eDisabled§r (hook detached)",
     "cmd.info.redir.passive": "§aPassive Observation§r (hook attached, vanilla passthrough)",
     "cmd.info.redir.dry_run": "§aDry-Run Simulation§r (hook attached, index lookup active, 0 bytes modified)",
-    "cmd.info.redir.active": "§aActive Redirection§r (custom materials overridden)",
+    "cmd.info.redir.active": "§aActive Substitution§r (authorized materials overridden)",
     "cmd.info.telemetry": "Observed Reads: {0} ({1} .material.bin, {2} Dry-Run matches, {3} without replacement)",
     "cmd.info.hookStatus": "readFile Hook: {0}",
     "cmd.info.redirectStatus": "Redirection State: {0}",
     "cmd.info.hook.installed": "§aInstalled§r",
-    "cmd.info.hook.detached": "§eDetached§r"
+    "cmd.info.hook.detached": "§eDetached§r",
+    "cmd.info.telemetryActive": "Active Telemetry: {0} reads ({1} .material.bin, {2} substituted, {3} validation errors)"
 }
