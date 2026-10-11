@@ -1,10 +1,25 @@
 #include "shaders/ShaderPackManager.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cctype>
+#include <chrono>
 #include <fstream>
 #include <memory>
+#include <thread>
 #include <vector>
+
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#else
+#include <unistd.h>
+#endif
 
 #include "miniz/miniz.h"
 
@@ -84,6 +99,18 @@ std::uint32_t computeFileCrc32(std::filesystem::path const& path) {
 
 } // namespace
 
+std::string ShaderPackManager::generateUniqueSuffix() {
+    static std::atomic<std::uint64_t> sCounter{0};
+    auto now = std::chrono::steady_clock::now().time_since_epoch().count();
+    auto pid =
+#ifdef _WIN32
+        GetCurrentProcessId();
+#else
+        getpid();
+#endif
+    return std::to_string(pid) + "_" + std::to_string(now) + "_" + std::to_string(++sCounter);
+}
+
 bool ShaderPackManager::isPathInside(std::filesystem::path const& base, std::filesystem::path const& target) {
     std::error_code ec;
     if (base.empty() || target.empty()) return false;
@@ -111,6 +138,129 @@ bool ShaderPackManager::isSupportedArchive(std::filesystem::path const& file) {
     return ext == ".zip" || ext == ".mcpack";
 }
 
+bool ShaderPackManager::validateArchiveIntegrity(
+    std::filesystem::path const& archive,
+    ArchiveLimits const& limits,
+    std::string* outError
+) {
+    std::error_code ec;
+    if (!std::filesystem::is_regular_file(archive, ec)) {
+        if (outError) *outError = "Archive file not found: " + archive.string();
+        return false;
+    }
+
+    FILE* fp = nullptr;
+#ifdef _WIN32
+    if (_wfopen_s(&fp, archive.wstring().c_str(), L"rb") != 0 || !fp) {
+        if (outError) *outError = "Could not open archive file";
+        return false;
+    }
+#else
+    fp = std::fopen(archive.string().c_str(), "rb");
+    if (!fp) {
+        if (outError) *outError = "Could not open archive file";
+        return false;
+    }
+#endif
+
+    mz_zip_archive zip;
+    std::memset(&zip, 0, sizeof(zip));
+    if (!mz_zip_reader_init_cfile(&zip, fp, 0, 0)) {
+        std::fclose(fp);
+        if (outError) *outError = "Not a valid ZIP or MCPACK archive";
+        return false;
+    }
+
+    auto cleanup = [&]() {
+        mz_zip_reader_end(&zip);
+        std::fclose(fp);
+    };
+
+    mz_uint numFiles = mz_zip_reader_get_num_files(&zip);
+    if (numFiles == 0) {
+        cleanup();
+        if (outError) *outError = "Archive is empty (0 files)";
+        return false;
+    }
+
+    if (numFiles > limits.maxFiles) {
+        cleanup();
+        if (outError) *outError = "Archive exceeds maximum file count limit";
+        return false;
+    }
+
+    std::uint64_t totalUncompressed = 0;
+    bool hasRecognizedContent = false;
+
+    for (mz_uint i = 0; i < numFiles; ++i) {
+        char filenameBuf[1024];
+        if (!mz_zip_reader_get_filename(&zip, i, filenameBuf, sizeof(filenameBuf))) {
+            cleanup();
+            if (outError) *outError = "Corrupt entry filename in archive";
+            return false;
+        }
+
+        std::string entryName(filenameBuf);
+        if (!isSafeEntryPath(entryName, limits.maxDirectoryDepth)) {
+            cleanup();
+            if (outError) *outError = "Path traversal or unsafe entry detected in archive: " + entryName;
+            return false;
+        }
+
+        mz_zip_archive_file_stat stat;
+        if (!mz_zip_reader_file_stat(&zip, i, &stat)) {
+            cleanup();
+            if (outError) *outError = "Corrupt entry stat in archive";
+            return false;
+        }
+
+        bool isSymlink = ((stat.m_version_made_by >> 8) == 3 && ((stat.m_external_attr >> 16) & 0170000) == 0120000);
+        if (isSymlink) {
+            cleanup();
+            if (outError) *outError = "Symbolic links not permitted in archive: " + entryName;
+            return false;
+        }
+
+        if (stat.m_uncomp_size > limits.maxSingleFileBytes) {
+            cleanup();
+            if (outError) *outError = "File exceeds single file size limit: " + entryName;
+            return false;
+        }
+
+        totalUncompressed += stat.m_uncomp_size;
+        if (totalUncompressed > limits.maxTotalUncompressedBytes) {
+            cleanup();
+            if (outError) *outError = "Archive exceeds total uncompressed size limit";
+            return false;
+        }
+
+        if (stat.m_comp_size > 0 && stat.m_uncomp_size > 65536) {
+            double ratio = static_cast<double>(stat.m_uncomp_size) / static_cast<double>(stat.m_comp_size);
+            if (ratio > limits.maxCompressionRatio) {
+                cleanup();
+                if (outError) *outError = "Archive exceeds safe compression ratio limit (potential zip bomb)";
+                return false;
+            }
+        }
+
+        auto lowerName = toLowerStr(entryName);
+        if (lowerName.ends_with("shaders.properties") ||
+            lowerName.ends_with("manifest.json") ||
+            lowerName.ends_with(".material.bin")) {
+            hasRecognizedContent = true;
+        }
+    }
+
+    cleanup();
+
+    if (!hasRecognizedContent) {
+        if (outError) *outError = "Archive does not contain recognized shader pack files (manifest.json, shaders.properties or *.material.bin)";
+        return false;
+    }
+
+    return true;
+}
+
 bool ShaderPackManager::extractArchive(
     std::filesystem::path const& archive,
     std::filesystem::path const& destDir,
@@ -125,11 +275,11 @@ bool ShaderPackManager::extractArchive(
 
     FILE* fp = nullptr;
 #ifdef _WIN32
-    if (_wfopen_s(&fp, archive.wstring().c_str(), L"rb") != 0) fp = nullptr;
+    if (_wfopen_s(&fp, archive.wstring().c_str(), L"rb") != 0 || !fp) return false;
 #else
     fp = std::fopen(archive.string().c_str(), "rb");
-#endif
     if (!fp) return false;
+#endif
 
     mz_zip_archive zip;
     std::memset(&zip, 0, sizeof(zip));
@@ -174,7 +324,6 @@ bool ShaderPackManager::extractArchive(
             return false;
         }
 
-        // Detección y rechazo de enlaces simbólicos (POSIX S_IFLNK = 0120000)
         bool isSymlink = ((stat.m_version_made_by >> 8) == 3 && ((stat.m_external_attr >> 16) & 0170000) == 0120000);
         if (isSymlink) {
             cleanup();
@@ -192,7 +341,6 @@ bool ShaderPackManager::extractArchive(
             return false;
         }
 
-        // Mitigación de Zip Bombs: ratio de compresión anómalo
         if (stat.m_comp_size > 0 && stat.m_uncomp_size > 65536) {
             double ratio = static_cast<double>(stat.m_uncomp_size) / static_cast<double>(stat.m_comp_size);
             if (ratio > limits.maxCompressionRatio) {
@@ -204,8 +352,9 @@ bool ShaderPackManager::extractArchive(
         entryNames.push_back(std::move(entryName));
     }
 
-    // 2. Extracción aislada en directorio temporal de staging
-    auto stagingDir = destDir.parent_path() / (destDir.filename().string() + ".staging_tmp");
+    // 2. Extracción aislada en directorio temporal de staging con nombre exclusivo
+    auto suffix = generateUniqueSuffix();
+    auto stagingDir = destDir.parent_path() / (destDir.filename().string() + ".staging_" + suffix);
     std::filesystem::remove_all(stagingDir, ec);
     std::filesystem::create_directories(stagingDir, ec);
     if (ec) {
@@ -218,7 +367,6 @@ bool ShaderPackManager::extractArchive(
         auto const& entryName = entryNames[i];
         auto targetPath = stagingDir / entryName;
 
-        // Validar contención física estricta dentro del directorio de staging
         if (!isPathInside(stagingDir, targetPath)) {
             extractionOk = false;
             break;
@@ -267,7 +415,6 @@ bool ShaderPackManager::extractArchive(
                            !ShaderPackParser::findPrebuiltMaterials(stagingDir).empty();
 
     if (!hasValidContent) {
-        // Explorar posibles subdirectorios únicos (ej: pack-main/)
         for (auto const& e : std::filesystem::directory_iterator(stagingDir, ec)) {
             if (e.is_directory(ec) && (hasPackMarker(e.path()) || !ShaderPackParser::findPrebuiltMaterials(e.path()).empty())) {
                 hasValidContent = true;
@@ -281,8 +428,8 @@ bool ShaderPackManager::extractArchive(
         return false;
     }
 
-    // 4. Publicación atómica: preservar paquete anterior si la sustitución fallara
-    auto backupDir = destDir.parent_path() / (destDir.filename().string() + ".old_backup");
+    // 4. Publicación atómica: preservar paquete anterior con nombre de backup exclusivo
+    auto backupDir = destDir.parent_path() / (destDir.filename().string() + ".backup_" + suffix);
     std::filesystem::remove_all(backupDir, ec);
 
     bool hadExisting = std::filesystem::exists(destDir, ec);
@@ -407,7 +554,6 @@ bool ShaderPackManager::selectPack(std::string_view name) {
     auto* pack = findPack(name);
     if (!pack) return false;
 
-    // Transaccional: guardar valor previo y revertir si el guardado falla
     auto const prevActive = ConfigManager::getInstance().config().shaders.activePack;
     ConfigManager::getInstance().config().shaders.activePack = std::string(name);
 
@@ -490,13 +636,53 @@ bool ShaderPackManager::importPack(std::filesystem::path const& sourceFile, std:
         return false;
     }
 
+    // 1. Validar integridad de la fuente ANTES de tocar el destino
+    std::string archiveErr;
+    if (!validateArchiveIntegrity(sourceFile, {}, &archiveErr)) {
+        outError = "Archive validation failed: " + archiveErr;
+        return false;
+    }
+
     std::filesystem::create_directories(mPacksRoot, ec);
     auto dest = mPacksRoot / sourceFile.filename();
 
-    std::filesystem::copy_file(sourceFile, dest, std::filesystem::copy_options::overwrite_existing, ec);
+    // 2. Copiar primero hacia un archivo temporal exclusivo
+    auto suffix = generateUniqueSuffix();
+    auto tempImportFile = mPacksRoot / (sourceFile.filename().string() + ".import_tmp_" + suffix);
+    std::filesystem::copy_file(sourceFile, tempImportFile, std::filesystem::copy_options::overwrite_existing, ec);
     if (ec) {
-        outError = "Failed to copy file: " + ec.message();
+        outError = "Failed to copy to staging: " + ec.message();
+        std::filesystem::remove(tempImportFile, ec);
         return false;
+    }
+
+    // 3. Si el destino ya existe, crear backup temporal exclusivo
+    bool hadExisting = std::filesystem::exists(dest, ec);
+    auto backupFile = mPacksRoot / (sourceFile.filename().string() + ".backup_" + suffix);
+    if (hadExisting) {
+        std::filesystem::rename(dest, backupFile, ec);
+        if (ec) {
+            outError = "Failed to backup existing pack: " + ec.message();
+            std::filesystem::remove(tempImportFile, ec);
+            return false;
+        }
+    }
+
+    // 4. Mover atómicamente el nuevo archivo hacia el destino
+    std::filesystem::rename(tempImportFile, dest, ec);
+    if (ec) {
+        outError = "Failed to finalize import: " + ec.message();
+        if (hadExisting) {
+            std::error_code restoreEc;
+            std::filesystem::rename(backupFile, dest, restoreEc);
+        }
+        std::filesystem::remove(tempImportFile, ec);
+        return false;
+    }
+
+    // 5. Limpiar backup si todo salió bien
+    if (hadExisting) {
+        std::filesystem::remove(backupFile, ec);
     }
 
     scan(mPacksRoot, mGeneratedRoot);
@@ -519,7 +705,6 @@ bool ShaderPackManager::deletePack(std::string_view name, std::string& outError)
 
     std::error_code ec;
 
-    // Verificación estricta de límites: nunca borrar rutas fuera de directorios administrados
     if (!pack->archivePath.empty()) {
         if (!isPathInside(mPacksRoot, pack->archivePath)) {
             outError = "Security violation: archive path outside managed packs directory";
@@ -638,7 +823,7 @@ void ShaderPackManager::scan(std::filesystem::path const& packsRoot, std::filesy
         auto binsDir    = packGenDir / "compiled";
 
         if (!ensureExtracted(entry.path(), srcDir)) {
-            continue; // Extracción fallida o archivo inseguro/corrupto ignorado
+            continue;
         }
 
         auto normalizedSrc = normalizeSourceDir(srcDir);

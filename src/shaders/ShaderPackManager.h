@@ -44,7 +44,7 @@ public:
     // Selecciona explícitamente un subpack y actualiza los materiales
     bool selectSubpack(std::string_view packName, std::string_view subpackName);
 
-    // Importa un archivo .zip o .mcpack hacia data/shaderpacks/
+    // Importa un archivo .zip o .mcpack de forma transaccional preservando archivos previos ante error
     bool importPack(std::filesystem::path const& sourceFile, std::string& outError);
 
     // Elimina un paquete verificando que las rutas pertenezcan a los directorios administrados
@@ -53,11 +53,18 @@ public:
     // Modifica un parámetro del pack validando su valor y guardándolo transaccionalmente
     bool setParameterValue(std::string_view packName, std::string_view paramName, std::string value);
 
-    // Extrae en un directorio temporal aislado con inspección de entradas y verificación de integridad
+    // Extrae en un directorio temporal aislado exclusivo con inspección y verificación de integridad
     static bool extractArchive(
         std::filesystem::path const& archive,
         std::filesystem::path const& destDir,
         ArchiveLimits const& limits = {}
+    );
+
+    // Valida la integridad, seguridad y estructura de un archivo comprimido antes de instalarlo
+    static bool validateArchiveIntegrity(
+        std::filesystem::path const& archive,
+        ArchiveLimits const& limits = {},
+        std::string* outError = nullptr
     );
 
     // Comprueba si un archivo o directorio tiene extensión de shader pack válida (.zip o .mcpack)
@@ -65,6 +72,9 @@ public:
 
     // Verifica que una ruta objetivo resida estrictamente dentro de un directorio base permitido
     static bool isPathInside(std::filesystem::path const& base, std::filesystem::path const& target);
+
+    // Genera un sufijo exclusivo (PID + reloj de alta resolución + contador atómico)
+    static std::string generateUniqueSuffix();
 
     void clear() { mPacks.clear(); }
 

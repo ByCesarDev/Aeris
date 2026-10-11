@@ -413,5 +413,130 @@ void runShaderPackTests() {
     check(spMgr.findPack("PackOne") == nullptr, "Deleted pack must no longer be present");
     check(!std::filesystem::exists(packFolder1), "Pack folder must be deleted from disk");
 
+    // =========================================================================
+    // 10. Regresión: importPack transaccional y preservación ante archivos corruptos
+    // =========================================================================
+    auto importTestPacks = tempDir / "import_test_packs";
+    auto importTestGen   = tempDir / "import_test_gen";
+    std::filesystem::create_directories(importTestPacks);
+    std::filesystem::create_directories(importTestGen);
+
+    auto existingZip = importTestPacks / "MyPack.zip";
+    createTestZip(existingZip, {
+        {"shaders.properties", "option.ORIGINAL=ON\n"},
+        {"manifest.json", "{\"header\":{\"name\":\"Original Pack\"}}"}
+    });
+
+    auto corruptNewFile = tempDir / "MyPack.zip"; // Mismo nombre de archivo pero corrupto
+    {
+        std::ofstream badOut(corruptNewFile, std::ios::binary);
+        badOut << "NOT_A_VALID_ZIP_HEADER_GARBAGE";
+    }
+
+    spMgr.scan(importTestPacks, importTestGen);
+    check(spMgr.findPack("MyPack.zip") != nullptr, "Initial pack must be discovered");
+
+    std::string importErr;
+    bool importBadResult = spMgr.importPack(corruptNewFile, importErr);
+    check(!importBadResult, "importPack with corrupt file must fail");
+    check(!importErr.empty(), "importPack must report error description");
+
+    // Verificar que el archivo original no fue destruido ni sobrescrito por el archivo corrupto
+    check(aeris::ShaderPackManager::validateArchiveIntegrity(existingZip),
+        "Existing pack file must remain completely intact and valid after failed import");
+
+    // Probar importación exitosa de un archivo nuevo válido
+    auto validNewFile = tempDir / "BrandNewPack.zip";
+    createTestZip(validNewFile, {
+        {"shaders.properties", "option.FEATURE=ON\n"},
+        {"manifest.json", "{\"header\":{\"name\":\"Brand New\"}}"}
+    });
+
+    bool importGoodResult = spMgr.importPack(validNewFile, importErr);
+    check(importGoodResult, "importPack with valid archive must succeed");
+    check(std::filesystem::is_regular_file(importTestPacks / "BrandNewPack.zip"),
+        "Imported pack must reside in managed packs directory");
+    check(spMgr.findPack("BrandNewPack.zip") != nullptr,
+        "Imported pack must be immediately discovered by manager");
+
+    // =========================================================================
+    // 11. Regresión: collectPrebuiltDirs preserva orden de declaración vs alfabético
+    // =========================================================================
+    auto subpackRoot = tempDir / "ordered_subpacks";
+    std::filesystem::create_directories(subpackRoot);
+
+    // Autor declara explícitamente "vc" primero y "novc" segundo en manifest.json
+    {
+        std::ofstream mf(subpackRoot / "manifest.json");
+        mf << "{\n"
+           << "  \"header\": { \"name\": \"Subpack Order Test\" },\n"
+           << "  \"subpacks\": [\n"
+           << "    { \"folder_name\": \"vc\", \"name\": \"Volumetric Clouds\" },\n"
+           << "    { \"folder_name\": \"novc\", \"name\": \"No Volumetric Clouds\" }\n"
+           << "  ]\n"
+           << "}\n";
+    }
+
+    // En disco, Windows podría ordenar novc antes que vc alfabéticamente
+    auto vcDir   = subpackRoot / "subpacks" / "vc";
+    auto novcDir = subpackRoot / "subpacks" / "novc";
+    std::filesystem::create_directories(vcDir);
+    std::filesystem::create_directories(novcDir);
+
+    {
+        std::ofstream f1(vcDir / "ShaderVC.material.bin");
+        f1 << "vc";
+        std::ofstream f2(novcDir / "ShaderNOVC.material.bin");
+        f2 << "novc";
+    }
+
+    // Sin subpack explícito, debe tomar el primer subpack descubierto (vc), NO por orden alfabético (novc)
+    auto defaultCollected = aeris::ShaderPackParser::collectPrebuiltDirs(subpackRoot, "");
+    check(!defaultCollected.empty(), "collectPrebuiltDirs must return directories");
+    if (!defaultCollected.empty()) {
+        auto firstCollectedName = defaultCollected.front().filename().string();
+        check(firstCollectedName == "vc",
+            "collectPrebuiltDirs without explicit subpack must pick first declared subpack ('vc'), not alphabetical ('novc')");
+    }
+
+    // Con subpack explícito 'novc', debe seleccionar 'novc'
+    auto explicitCollected = aeris::ShaderPackParser::collectPrebuiltDirs(subpackRoot, "novc");
+    check(!explicitCollected.empty(), "collectPrebuiltDirs with explicit subpack must return directories");
+    if (!explicitCollected.empty()) {
+        check(explicitCollected.front().filename().string() == "novc",
+            "collectPrebuiltDirs with explicit 'novc' must pick 'novc'");
+    }
+
+    // =========================================================================
+    // 12. Regresión: saveSettings atómico y unicidad de sufijos temporales
+    // =========================================================================
+    auto s1 = aeris::ShaderPackManager::generateUniqueSuffix();
+    auto s2 = aeris::ShaderPackManager::generateUniqueSuffix();
+    check(!s1.empty() && !s2.empty() && s1 != s2,
+        "generateUniqueSuffix must generate unique, non-empty identifiers");
+
+    auto atomicSettingsPath = tempDir / "atomic_settings.txt";
+    aeris::ShaderPack atomicPack;
+    atomicPack.name = "AtomicPack";
+    atomicPack.activeSubpack = "ultra";
+    atomicPack.parameters = params;
+    atomicPack.parameters[0].current = "ON";
+
+    check(aeris::ShaderPackParser::saveSettings(atomicPack, atomicSettingsPath),
+        "saveSettings must succeed with atomic file replacement");
+    check(std::filesystem::is_regular_file(atomicSettingsPath),
+        "Settings file must exist on disk after saveSettings");
+
+    // Verificar que no queden archivos temporales .tmp_ residuales en el directorio
+    bool hasResidualTemp = false;
+    for (auto const& e : std::filesystem::directory_iterator(tempDir)) {
+        if (e.path().filename().string().find(".tmp_") != std::string::npos) {
+            hasResidualTemp = true;
+            break;
+        }
+    }
+    check(!hasResidualTemp, "saveSettings must leave no residual temporary files");
+
     std::filesystem::remove_all(tempDir);
 }
+

@@ -2,13 +2,27 @@
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <cmath>
 #include <cstdlib>
 #include <fstream>
 #include <map>
 #include <sstream>
+#include <thread>
+#include <unordered_map>
+
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
 
 #include "nlohmann/json.hpp"
+#include "shaders/ShaderPackManager.h"
 
 namespace aeris {
 
@@ -79,7 +93,7 @@ void configureParameterFromTokens(ShaderParameter& param, std::vector<std::strin
         }
     }
 
-    // Comprobar formato slider numérico: <default> <min> <max> [step]
+    // Comprobar formato slider numérico: <min> <max> <default> [step]
     bool allNumeric = true;
     for (auto const& t : tokens) {
         char* end = nullptr;
@@ -126,7 +140,15 @@ void configureParameterFromTokens(ShaderParameter& param, std::vector<std::strin
 
 std::string subpackNameOf(std::filesystem::path const& path) {
     auto str = path.generic_string();
-    auto pos = str.find("subpacks/");
+    std::size_t pos = std::string::npos;
+    if (str.starts_with("subpacks/")) {
+        pos = 0;
+    } else {
+        pos = str.find("/subpacks/");
+        if (pos != std::string::npos) {
+            pos += 1; // Saltear '/' inicial para apuntar exactamente al inicio de "subpacks/"
+        }
+    }
     if (pos == std::string::npos) return {};
 
     pos += 9;
@@ -433,7 +455,8 @@ std::vector<std::filesystem::path> ShaderPackParser::collectPrebuiltDirs(
     std::string_view activeSubpack
 ) {
     std::vector<std::filesystem::path> base;
-    std::map<std::string, std::vector<std::filesystem::path>> subpacks;
+    std::vector<std::string> subpackOrder;
+    std::unordered_map<std::string, std::vector<std::filesystem::path>> subpackMap;
 
     std::error_code ec;
     if (!std::filesystem::is_directory(root, ec)) return base;
@@ -461,25 +484,77 @@ std::vector<std::filesystem::path> ShaderPackParser::collectPrebuiltDirs(
         if (sub.empty()) {
             base.push_back(it->path());
         } else {
-            subpacks[sub].push_back(it->path());
+            if (subpackMap.find(sub) == subpackMap.end()) {
+                subpackOrder.push_back(sub);
+            }
+            subpackMap[sub].push_back(it->path());
         }
         it.disable_recursion_pending();
     }
 
+    // Consultar manifest.json para obtener el orden exacto declarado por el autor
+    std::vector<std::string> authorDeclaredSubpacks;
+    auto manifestPath = root / "manifest.json";
+    if (!std::filesystem::is_regular_file(manifestPath, ec) && root.has_parent_path()) {
+        manifestPath = root.parent_path() / "manifest.json";
+    }
+    if (std::filesystem::is_regular_file(manifestPath, ec)) {
+        std::ifstream mf(manifestPath);
+        if (mf.is_open()) {
+            try {
+                nlohmann::json j;
+                mf >> j;
+                if (j.contains("subpacks") && j["subpacks"].is_array()) {
+                    for (auto const& s : j["subpacks"]) {
+                        if (s.contains("folder_name") && s["folder_name"].is_string()) {
+                            authorDeclaredSubpacks.push_back(s["folder_name"].get<std::string>());
+                        }
+                    }
+                }
+            } catch (...) {}
+        }
+    }
+
     std::vector<std::filesystem::path> out = base;
 
-    if (!subpacks.empty()) {
+    if (!subpackMap.empty()) {
         if (!activeSubpack.empty()) {
-            auto itSub = subpacks.find(std::string(activeSubpack));
-            if (itSub != subpacks.end()) {
+            auto itSub = subpackMap.find(std::string(activeSubpack));
+            if (itSub != subpackMap.end()) {
                 out.insert(out.end(), itSub->second.begin(), itSub->second.end());
             } else {
-                // Fallback al primer subpack
-                out.insert(out.end(), subpacks.begin()->second.begin(), subpacks.begin()->second.end());
+                // Fallback al orden declarado por el autor o al primero descubierto
+                std::string chosen;
+                for (auto const& aSub : authorDeclaredSubpacks) {
+                    if (subpackMap.find(aSub) != subpackMap.end()) {
+                        chosen = aSub;
+                        break;
+                    }
+                }
+                if (chosen.empty() && !subpackOrder.empty()) {
+                    chosen = subpackOrder.front();
+                }
+                if (!chosen.empty()) {
+                    auto const& dirs = subpackMap[chosen];
+                    out.insert(out.end(), dirs.begin(), dirs.end());
+                }
             }
         } else {
-            // Sin selección explícita: seleccionar el primero por orden natural, no rbegin()
-            out.insert(out.end(), subpacks.begin()->second.begin(), subpacks.begin()->second.end());
+            // Sin selección explícita: usar estrictamente el primer subpack según el orden declarado por el autor
+            std::string chosen;
+            for (auto const& aSub : authorDeclaredSubpacks) {
+                if (subpackMap.find(aSub) != subpackMap.end()) {
+                    chosen = aSub;
+                    break;
+                }
+            }
+            if (chosen.empty() && !subpackOrder.empty()) {
+                chosen = subpackOrder.front();
+            }
+            if (!chosen.empty()) {
+                auto const& dirs = subpackMap[chosen];
+                out.insert(out.end(), dirs.begin(), dirs.end());
+            }
         }
     }
 
@@ -564,20 +639,56 @@ bool ShaderPackParser::saveSettings(ShaderPack const& pack, std::filesystem::pat
     std::error_code ec;
     std::filesystem::create_directories(settingsFile.parent_path(), ec);
 
-    std::ofstream file(settingsFile, std::ios::out | std::ios::trunc);
-    if (!file.is_open()) return false;
+    // Escribir en un archivo temporal exclusivo para garantizar persistencia atómica
+    auto tempPath = settingsFile.string() + ".tmp_" + ShaderPackManager::generateUniqueSuffix();
 
-    file << "# Aeris Shader Settings for " << pack.name << "\n";
-    if (!pack.activeSubpack.empty()) {
-        file << "subpack = " << pack.activeSubpack << "\n";
-    }
-    for (auto const& param : pack.parameters) {
-        if (param.type != ParameterType::Category) {
-            file << param.name << " = " << param.current << "\n";
+    {
+        std::ofstream file(tempPath, std::ios::out | std::ios::trunc);
+        if (!file.is_open()) return false;
+
+        file << "# Aeris Shader Settings for " << pack.name << "\n";
+        if (!pack.activeSubpack.empty()) {
+            file << "subpack = " << pack.activeSubpack << "\n";
+        }
+        for (auto const& param : pack.parameters) {
+            if (param.type != ParameterType::Category) {
+                file << param.name << " = " << param.current << "\n";
+            }
+        }
+        file.flush();
+        if (!file.good()) {
+            file.close();
+            std::filesystem::remove(tempPath, ec);
+            return false;
         }
     }
-    file.flush();
-    return file.good();
+
+#ifdef _WIN32
+    // Reemplazo atómico con flush a disco en Windows con reintentos
+    bool replaced = false;
+    for (int attempt = 0; attempt < 10; ++attempt) {
+        if (MoveFileExW(
+                std::filesystem::path(tempPath).wstring().c_str(),
+                settingsFile.wstring().c_str(),
+                MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+            replaced = true;
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    if (!replaced) {
+        std::filesystem::remove(tempPath, ec);
+        return false;
+    }
+    return true;
+#else
+    std::filesystem::rename(tempPath, settingsFile, ec);
+    if (ec) {
+        std::filesystem::remove(tempPath, ec);
+        return false;
+    }
+    return true;
+#endif
 }
 
 } // namespace aeris
