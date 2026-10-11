@@ -17,6 +17,7 @@
 #include "core/ConfigManager.h"
 #include "localization/LocalizationManager.h"
 #include "optimization/PerformanceManager.h"
+#include "shaders/ShaderPackManager.h"
 
 namespace aeris {
 
@@ -72,9 +73,10 @@ bool AerisMod::enable() {
     auto& logger = getSelf().getLogger();
     logger.info("Aeris enabling...");
 
-    // Asegurar existencia de directorios de datos
-    static_cast<void>(getPacksDir());
-    static_cast<void>(getGeneratedDir());
+    // Asegurar existencia de directorios de datos y escanear paquetes
+    auto packsDir = getPacksDir();
+    auto genDir   = getGeneratedDir();
+    ShaderPackManager::getInstance().scan(packsDir, genDir);
 
     // Registrar comandos de cliente internacionalizados
     mCommandListener = ll::event::EventBus::getInstance().emplaceListener<ll::event::command::ClientCommandRegisterEvent>(
@@ -95,8 +97,39 @@ bool AerisMod::enable() {
             cmd.overload().text("help").execute([](CommandOrigin const&, CommandOutput& output) {
                 output.success(tr("cmd.help.header"));
                 output.success(tr("cmd.help.aeris"));
+                output.success(tr("cmd.help.scan"));
+                output.success(tr("cmd.help.list"));
                 output.success(tr("cmd.help.info"));
                 output.success(tr("cmd.help.version"));
+            });
+
+            cmd.overload().text("scan").execute([](CommandOrigin const&, CommandOutput& output) {
+                auto packsDir = AerisMod::getInstance().getPacksDir();
+                auto genDir   = AerisMod::getInstance().getGeneratedDir();
+                ShaderPackManager::getInstance().scan(packsDir, genDir);
+                auto count = std::to_string(ShaderPackManager::getInstance().packs().size());
+                output.success(trFormat("cmd.scan.success", {count}));
+            });
+
+            cmd.overload().text("list").execute([](CommandOrigin const&, CommandOutput& output) {
+                auto const& packs = ShaderPackManager::getInstance().packs();
+                output.success(trFormat("cmd.list.header", {std::to_string(packs.size())}));
+
+                if (packs.empty()) {
+                    output.success(tr("cmd.list.empty"));
+                    return;
+                }
+
+                auto const* active = ShaderPackManager::getInstance().activePack();
+                for (auto const& p : packs) {
+                    std::string mode = renderModeToString(p.renderMode);
+                    std::string paramCount = std::to_string(p.parameters.size());
+                    if (active && active->name == p.name) {
+                        output.success(trFormat("cmd.list.item", {p.name, mode, paramCount, tr("Shaders: Enabled")}));
+                    } else {
+                        output.success(trFormat("cmd.list.item_inactive", {p.name, mode, paramCount}));
+                    }
+                }
             });
 
             cmd.overload().text("info").execute([](CommandOrigin const&, CommandOutput& output) {

@@ -120,5 +120,12 @@
     "cmd.info.unavailable": "§cUnavailable§r",
     "cmd.info.yes": "§aYes§r",
     "cmd.info.no": "§cNo§r",
-    "cmd.version.text": "Aeris v{0} (Client Mod)"
+    "cmd.version.text": "Aeris v{0} (Client Mod)",
+    "cmd.scan.success": "Rescanned shader packs: {0} pack(s) found",
+    "cmd.list.header": "§6=== Shader Packs ({0}) ===§r",
+    "cmd.list.empty": "No shader packs found in data/shaderpacks/",
+    "cmd.list.item": "§a*§r {0} [{1}] ({2} params) - {3}",
+    "cmd.list.item_inactive": "  {0} [{1}] ({2} params)",
+    "cmd.help.scan": "/aeris scan - Rescan data/shaderpacks/ folder",
+    "cmd.help.list": "/aeris list - List all discovered shader packs"
 }

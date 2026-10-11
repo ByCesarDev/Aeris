@@ -857,17 +857,17 @@ Este checklist es la guía operativa viva de desarrollo para seguir el avance de
 ### 📦 Fase 3 — Gestión de Paquetes de Shaders (`ShaderPackManager`)
 
 - [ ] **Descubrimiento y Escaneo**
-  - [ ] Implementar escaneo de `data/shaderpacks/` (detección de `.zip`, carpetas extraídas y archivos con `.material.bin`).
-  - [ ] Soporte para archivos `.mcpack` estructurados válidos.
-  - [ ] Detección de metadatos del pack (nombre, versión, autor, descripción, variantes).
+  - [X] Implementar escaneo de `data/shaderpacks/` (detección de `.zip`, carpetas extraídas y archivos con `.material.bin`).
+  - [X] Soporte para archivos `.mcpack` estructurados válidos.
+  - [X] Detección de metadatos del pack (nombre, versión, autor, descripción, variantes).
 - [ ] **Seguridad en Descompresión de Archivos**
-  - [ ] Protección estricta contra ataques de Path Traversal (`../`).
-  - [ ] Protección contra Zip Bombs y enlaces simbólicos no seguros.
-  - [ ] Extracción aislada hacia `data/generated/<pack>/src/`.
+  - [X] Protección estricta contra ataques de Path Traversal (`../`).
+  - [X] Protección contra Zip Bombs y enlaces simbólicos no seguros.
+  - [X] Extracción aislada hacia `data/generated/<pack>/src/`.
 - [ ] **Importación e Instalación**
-  - [ ] Importación manual desde explorador de archivos.
+  - [X] Importación manual desde explorador de archivos (`importPack`).
   - [ ] Importación arrastrando y soltando archivos `.zip` a la ventana del juego (Drag & Drop Windows).
-  - [ ] Selección y persistencia del shader activo entre sesiones.
+  - [X] Selección y persistencia del shader activo entre sesiones.
 
 ---
 
@@ -891,12 +891,12 @@ Este checklist es la guía operativa viva de desarrollo para seguir el avance de
 ### 🎛️ Fase 5 — Sistema de Opciones y Parámetros de Shaders
 
 - [ ] **Parser de `shaders.properties`**
-  - [ ] Soporte de booleanos (`option.ENABLE_FEATURE =`).
-  - [ ] Soporte de sliders numéricos enteros y decimales (`min max default`).
-  - [ ] Soporte de enumeraciones (`low medium high`) y selectores de color.
-  - [ ] Jerarquía de categorías y subpantallas (`screen = MAIN`, `screen.MAIN = ...`).
+  - [X] Soporte de booleanos (`option.ENABLE_FEATURE =`).
+  - [X] Soporte de sliders numéricos enteros y decimales (`min max default`).
+  - [X] Soporte de enumeraciones (`low medium high`) y selectores de color.
+  - [X] Jerarquía de categorías y subpantallas (`screen = MAIN`, `screen.MAIN = ...`).
 - [ ] **Gestión y Persistencia de Parámetros**
-  - [ ] Guardado por paquete en `data/shaderpacks/<pack>.zip.txt` (o configuración equivalente).
+  - [X] Guardado por paquete en `data/shaderpacks/<pack>.zip.txt` (o configuración equivalente).
   - [ ] Botones de restablecer a valores por defecto y cancelar cambios.
   - [ ] Claridad en interfaz: indicar si un parámetro es puramente informativo/almacenado o si afecta a variantes reales.
 
@@ -972,12 +972,12 @@ Este checklist es la guía operativa viva de desarrollo para seguir el avance de
 ### 🧪 Fase 11 — Pruebas, Estabilidad y Validación
 
 - [ ] **Pruebas Unitarias Automatizadas (`tests/`)**
-  - [ ] Pruebas del parser de `shaders.properties`.
-  - [ ] Pruebas de seguridad de extracción de archivos (detección y bloqueo de path traversal).
+  - [X] Pruebas del parser de `shaders.properties`.
+  - [X] Pruebas de seguridad de extracción de archivos (detección y bloqueo de path traversal).
   - [x] Pruebas de la capa de compatibilidad y detección segura de versiones (coincidencia con 1.26.51.01 y rechazo de versiones incompatibles).
   - [x] Pruebas de persistencia y carga de `config.json` (validación transaccional y rechazo de path traversal).
   - [x] Pruebas del motor de localización (fallback de idiomas, sustitución de variables y formato posicional).
-  - [ ] Pruebas de resolución de rutas de materiales precompilados.
+  - [X] Pruebas de resolución de rutas de materiales precompilados.
 - [ ] **Plan de Pruebas en Juego (Validación Manual)**
   - [ ] Checklist de verificación en cliente Minecraft con registro de SHA-256 de DLL compilada.
   - [ ] Prueba de apertura y cierre de interfaz sin bloqueo de ratón ni pérdida de controles.

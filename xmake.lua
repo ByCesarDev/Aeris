@@ -97,5 +97,7 @@ target("AerisTests")
         "src/core/ConfigManager.cpp",
         "src/core/CompatibilityManager.cpp",
         "src/localization/LocalizationManager.cpp",
-        "src/optimization/PerformanceManager.cpp"
+        "src/optimization/PerformanceManager.cpp",
+        "src/shaders/ShaderPackParser.cpp",
+        "src/shaders/ShaderPackManager.cpp"
     )
