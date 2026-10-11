@@ -1,0 +1,11 @@
+.xmake/
+build/
+bin/
+*.pdb
+*.log
+data/
+.vscode/
+.idea/
+*.user
+*.suo
+*.VC.db

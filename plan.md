@@ -797,3 +797,193 @@ Un detalle importante: aunque anteriormente hablamos de Bedrock 26.40, no quiero
 Y tampoco le estamos pidiendo reescribir absolutamente todo desde cero: debe identificar las partes útiles de RenderDragonShaderLoader y reutilizarlas cuando convenga, manteniendo Aeris como proyecto independiente y respetando la LGPL-3.0.
 
 Con este prompt ya puede comenzar el desarrollo real de Aeris 0.1.0-alpha.
+
+
+---
+
+# 📋 MASTER CHECKLIST DE DESARROLLO — AERIS 0.1.0-ALPHA
+
+Este checklist es la guía operativa viva de desarrollo para seguir el avance del proyecto fase por fase.
+
+---
+
+### 🔍 Fase 0 — Auditoría Técnica e Investigación (RenderDragonShaderLoader)
+- [x] **Auditoría de Shaders y Formatos (`core/`)**
+  - [x] Analizar `src/core/ShaderPack.*` (escaneo de directorios, detección de `.material.bin`, subpacks).
+  - [x] Analizar el parser de `shaders.properties` y modelos de parámetros (`ShaderParameter.h`).
+  - [x] Analizar `src/core/GraphicsModeController.*` (conmutación Forward/Fancy vs Deferred/Vibrant Visuals mediante opciones internas).
+- [x] **Auditoría de Inyecciones y Hooks (`hook/`)**
+  - [x] Auditar `MaterialHooks.*` (firmas binarias para `readFile`, `endFrame`, `reloadMaterial`).
+  - [x] Auditar `DragDropHooks.*` (subclaseo de `WNDPROC`, intercepción de `WM_DROPFILES`).
+- [x] **Auditoría de Arquitectura de UI (`ui/`)**
+  - [x] Analizar abstracción pura de dibujo `UiCanvas.h` y layouts (`UiLayout.*`, `UiSettings.*`, `UiScreen.*`).
+  - [x] Analizar adaptación al juego en `ShaderManagerScreen.*` (técnica de escena nativa vacía / placeholder dialog tomada de Lamium).
+- [x] **Generar Documento de Auditoría**
+  - [x] Crear `docs/ARCHITECTURE_AUDIT.md` detallando componentes reutilizables, código a reescribir, dependencias de versión, obligaciones de licencia (LGPL-3.0) y riesgos.
+
+---
+
+### 🏗️ Fase 1 — Creación del Proyecto Independiente Aeris
+- [x] **Estructura de Directorios**
+  - [x] Crear árbol de carpetas en `Aeris/`:
+    - `src/{core,shaders,hooks,rendering,optimization,ui,localization,mod}`
+    - `lang/`, `config/`, `docs/`, `tests/`, `samples/`
+- [x] **Sistema de Compilación y Configuración**
+  - [x] Crear `xmake.lua` propio adaptado para C++20, `clang-cl`, runtime MD y LeviLamina client mod.
+  - [x] Crear `manifest.json` y `tooth.json` configurados para Aeris (autor: `ByCesarDev`).
+  - [x] Configurar `.clang-format`, `.clang-tidy` e inclusión de encabezados limpia.
+- [x] **Licenciamiento y Avisos Legales**
+  - [x] Establecer `LICENSE` (LGPL-3.0).
+  - [x] Crear `THIRD_PARTY_NOTICES.md` con atribución explícita a RenderDragonShaderLoader, Lamium, Iris, etc.
+- [x] **Validación de Compilación Base**
+  - [x] Compilar el esqueleto del proyecto sin errores para verificar que el entorno de desarrollo y toolchain están listos.
+
+---
+
+### ⚙️ Fase 2 — Integración y Ciclo de Vida en LeviLamina
+- [x] **Punto de Entrada del Mod**
+  - [x] Implementar `AerisMod.cpp` (registro en el runtime de LeviLamina con hooks de ciclo de vida).
+- [x] **Capa de Compatibilidad (`CompatibilityManager`)**
+  - [x] Detección segura de la versión en tiempo de ejecución de Minecraft Bedrock.
+  - [ ] Verificación y validación estricta de firmas en memoria antes de aplicar cualquier hook.
+  - [ ] Fallback seguro: si una firma no coincide, desactivar funciones dependientes sin crashear el juego.
+- [ ] **Comandos de Chat y Teclas de Acceso Rápido**
+  - [x] Registrar comando raíz `/aeris` con subcomandos: `ui`, `scan`, `list`, `rollback`, `key`, `help`.
+  - [ ] Manejo de atajo de teclado global configurable (por defecto tecla `G`) con liberación limpia de inputs.
+
+---
+
+### 📦 Fase 3 — Gestión de Paquetes de Shaders (`ShaderPackManager`)
+- [ ] **Descubrimiento y Escaneo**
+  - [ ] Implementar escaneo de `data/shaderpacks/` (detección de `.zip`, carpetas extraídas y archivos con `.material.bin`).
+  - [ ] Soporte para archivos `.mcpack` estructurados válidos.
+  - [ ] Detección de metadatos del pack (nombre, versión, autor, descripción, variantes).
+- [ ] **Seguridad en Descompresión de Archivos**
+  - [ ] Protección estricta contra ataques de Path Traversal (`../`).
+  - [ ] Protección contra Zip Bombs y enlaces simbólicos no seguros.
+  - [ ] Extracción aislada hacia `data/generated/<pack>/src/`.
+- [ ] **Importación e Instalación**
+  - [ ] Importación manual desde explorador de archivos.
+  - [ ] Importación arrastrando y soltando archivos `.zip` a la ventana del juego (Drag & Drop Windows).
+  - [ ] Selección y persistencia del shader activo entre sesiones.
+
+---
+
+### 🎨 Fase 4 — Integración con RenderDragon y Hot-Reload
+- [ ] **Hooks de Materiales (`MaterialHooks`)**
+  - [ ] Redirección en tiempo real de `readFile` cuando el juego solicite `data/renderer/materials/*.material.bin`.
+  - [ ] Enrutamiento hacia los binarios del shader pack activo (`data/generated/<pack>/compiled/` o precompilados).
+- [ ] **Recarga en Caliente (Hot-Reload)**
+  - [ ] Hook de `endFrame` (`BgfxFrameBuilder`) para ejecución segura de `reloadMaterial`.
+  - [ ] Registro estructurado de confirmación de materiales recargados.
+- [ ] **Mecanismo de Rollback**
+  - [ ] Implementar `restoreVanilla()`: desactivación inmediata de redirecciones y restauración limpia de materiales originales de Bedrock.
+- [ ] **Control de Modo Gráfico (`GraphicsModeController`)**
+  - [ ] Detección de tipo de shader: Forward vs Deferred (`*Deferred*.material.bin`).
+  - [ ] Cambio automático del modo gráfico del juego: *Fancy* para Forward y *Vibrant Visuals/Advanced* para Deferred.
+  - [ ] Verificación de compatibilidad con hardware antes de forzar el modo.
+
+---
+
+### 🎛️ Fase 5 — Sistema de Opciones y Parámetros de Shaders
+- [ ] **Parser de `shaders.properties`**
+  - [ ] Soporte de booleanos (`option.ENABLE_FEATURE =`).
+  - [ ] Soporte de sliders numéricos enteros y decimales (`min max default`).
+  - [ ] Soporte de enumeraciones (`low medium high`) y selectores de color.
+  - [ ] Jerarquía de categorías y subpantallas (`screen = MAIN`, `screen.MAIN = ...`).
+- [ ] **Gestión y Persistencia de Parámetros**
+  - [ ] Guardado por paquete en `data/shaderpacks/<pack>.zip.txt` (o configuración equivalente).
+  - [ ] Botones de restablecer a valores por defecto y cancelar cambios.
+  - [ ] Claridad en interfaz: indicar si un parámetro es puramente informativo/almacenado o si afecta a variantes reales.
+
+---
+
+### 🔬 Fase 6 — Investigación de Compilación de Shaders
+- [ ] **Diseño Arquitectónico del Compilador**
+  - [ ] Diseñar interfaces `IShaderCompiler`, `ShaderCompilationJob`, `ShaderCompilationResult`.
+  - [ ] Diseñar sistema de caché de materiales compilados (`ShaderCache`).
+- [ ] **Estudio de Herramientas Externas**
+  - [ ] Evaluar viabilidad de integración con Lazurite / shaderc.
+  - [ ] Documentar en `docs/SHADER_COMPILATION.md` las dependencias, licencias y requisitos para la futura fase de compilación en caliente.
+
+---
+
+### 🖥️ Fase 7 — Interfaz de Usuario de Aeris (Estilo Iris)
+- [ ] **Motor de Renderizado Gráfico Abstracto**
+  - [ ] Implementar `UiCanvas` (dibujo de rectángulos sólidos, texto con métricas precisas y flush de lotes).
+- [ ] **Captura de Entrada y Escena Nativa**
+  - [ ] Implementar apertura mediante escena nativa vacía de Minecraft (aislamiento de input, liberación de cursor, supresión de HUD).
+  - [ ] Supresión segura del render nativo de la escena en `BeforeUIRenderEvent`.
+  - [ ] Restauración impecable de controles de juego al cerrar con tecla `Esc`, botón o tecla de acceso rápido.
+- [ ] **Pantallas y Componentes Visuales**
+  - [ ] **Pestaña Shaders**: Lista scrolleable de packs, estado activo, botones de importar, abrir carpeta, aplicar y cancelar.
+  - [ ] **Pestaña Ajustes de Shader**: Controles en dos columnas, sliders expandibles al hover, páginas de categorías.
+  - [ ] **Pestaña Gráficos**: Estado del modo gráfico actual y opciones disponibles.
+  - [ ] **Pestaña Rendimiento**: Panel de diagnóstico y métricas de procesamiento.
+  - [ ] **Pestaña Ajustes Generales**: Selector de idioma (EN/ES), atajo de teclado, fondo oscuro personalizable.
+  - [ ] **Pestaña Acerca de**: Versión, autor (ByCesarDev), créditos y licencias.
+- [ ] **Diseño Visual**
+  - [ ] Paleta oscura minimalista, contraste adecuado, feedback auditivo/visual sutil al interactuar.
+
+---
+
+### 🌐 Fase 8 — Localización Bilingüe (Inglés y Español)
+- [x] **Archivos de Traducción**
+  - [x] Crear `lang/en_US.json` (inglés completo como idioma base/fallback).
+  - [x] Crear `lang/es_ES.json` (español completo, profesional y natural).
+- [x] **Motor de Localización (`LocalizationManager`)**
+  - [x] Soporte UTF-8 completo.
+  - [x] Búsqueda por claves con fallback inmediato a inglés si falta una clave.
+  - [ ] Soporte para interpolación de parámetros (`{0}`, `{1}`).
+  - [x] Cero strings de usuario hardcodeados en el código C++.
+  - [x] Exclusión total de idiomas no contemplados (sin chino ni textos heredados sin traducir).
+
+---
+
+### ⚡ Fase 9 — Cimientos de Rendimiento (Filosofía Sodium)
+- [ ] **Módulo de Diagnósticos y Métricas**
+  - [x] Implementar `PerformanceManager` y `RenderDiagnostics`.
+  - [ ] Medición de tiempos de carga de shaders y sobrecarga de procesamiento de Aeris.
+  - [ ] Registro de backend gráfico activo y capacidades de RenderDragon detectadas.
+- [ ] **Hoja de Ruta de Optimización Futura**
+  - [ ] Documentar en `docs/ROADMAP.md` áreas potenciales de optimización en Bedrock (culling, estado de renderizado, optimización de malla de chunks, caché de shaders).
+  - [ ] Cero parches especulativos o cambios placebo en 0.1.0-alpha: solo optimizaciones medibles y verificadas.
+
+---
+
+### 💾 Fase 10 — Configuración y Persistencia
+- [x] **Esquema de Configuración**
+  - [x] Crear `config/config.json` estructurado y versionado (`configVersion`, `language`, `ui`, `shaders`, `performance`, `safety`).
+- [x] **Manejador de Configuración (`ConfigManager`)**
+  - [x] Lectura y escritura atómica (evitar archivos corruptos en cierres inesperados).
+  - [ ] Tolerancia a fallos: regeneración de claves faltantes con valores por defecto seguros.
+
+---
+
+### 🧪 Fase 11 — Pruebas, Estabilidad y Validación
+- [ ] **Pruebas Unitarias Automatizadas (`tests/`)**
+  - [ ] Pruebas del parser de `shaders.properties`.
+  - [ ] Pruebas de seguridad de extracción de archivos (detección y bloqueo de path traversal).
+  - [ ] Pruebas de persistencia y carga de `config.json`.
+  - [ ] Pruebas del motor de localización (fallback de idiomas, sustitución de variables).
+  - [ ] Pruebas de resolución de rutas de materiales precompilados.
+- [ ] **Plan de Pruebas en Juego (Validación Manual)**
+  - [ ] Checklist de verificación en cliente Minecraft con registro de SHA-256 de DLL compilada.
+  - [ ] Prueba de apertura y cierre de interfaz sin bloqueo de ratón ni pérdida de controles.
+  - [ ] Prueba de importación de packs por archivo y drag & drop.
+  - [ ] Prueba de activación de shader precompilado y cambio automático de modo gráfico.
+  - [ ] Prueba de rollback a materiales vanilla (`/aeris rollback` y botón en UI).
+
+---
+
+### 📚 Fase 12 — Documentación y Empaquetado Final
+- [ ] **Documentación Principal**
+  - [ ] Crear `README.md` completo en inglés.
+  - [ ] Crear `README_ES.md` completo en español.
+  - [ ] Crear `docs/ARCHITECTURE.md`.
+  - [ ] Crear `docs/COMPATIBILITY.md`.
+  - [ ] Crear `docs/SHADER_FORMAT.md`.
+  - [ ] Crear `docs/BUILDING.md`.
+- [ ] **Empaquetado de Distribución**
+  - [ ] Configurar script de empaquetado en `xmake.lua` para generar el bundle instalable (`bin/Aeris/` con DLL, `manifest.json`, `lang/`, `config/`).
+  - [ ] Validar manifiesto de paquete compatible con LeviLamina / LIP.

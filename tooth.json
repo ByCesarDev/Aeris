@@ -1,0 +1,50 @@
+{
+  "format_version": 3,
+  "format_uuid": "3b29c118-872f-4e94-814d-9a67a07742bc",
+  "tooth": "github.com/ByCesarDev/Aeris",
+  "version": "0.1.0-alpha",
+  "info": {
+    "name": "Aeris",
+    "description": "Shaders, rendering and performance mod for Minecraft Bedrock (RenderDragon) on LeviLamina",
+    "tags": [
+      "platform:levilamina",
+      "type:mod"
+    ]
+  },
+  "variants": [
+    {
+      "label": "client",
+      "platform": "win-x64",
+      "dependencies": {
+        "github.com/LiteLDev/LeviLamina#client": "26.51.*"
+      },
+      "assets": [
+        {
+          "type": "zip",
+          "urls": [
+            "https://{{tooth}}/releases/download/v{{version}}/Aeris-client-windows-x64.zip"
+          ],
+          "placements": [
+            {
+              "type": "dir",
+              "src": "Aeris/",
+              "dest": "mods/Aeris/"
+            }
+          ]
+        }
+      ],
+      "preserve_files": [],
+      "remove_files": [],
+      "scripts": {
+        "pre_install": [],
+        "install": [],
+        "post_install": [],
+        "pre_pack": [],
+        "post_pack": [],
+        "pre_uninstall": [],
+        "uninstall": [],
+        "post_uninstall": []
+      }
+    }
+  ]
+}

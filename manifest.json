@@ -1,0 +1,9 @@
+{
+    "name": "${modName}",
+    "entry": "${modFile}",
+    "version": "${modVersion}",
+    "type": "native",
+    "platform": "${modPlatform}",
+    "author": "ByCesarDev",
+    "description": "Shaders, rendering and performance mod for Minecraft Bedrock on LeviLamina"
+}

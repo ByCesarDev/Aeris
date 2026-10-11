@@ -1,0 +1,23 @@
+{
+    "configVersion": 1,
+    "enabled": true,
+    "language": "es_ES",
+    "dataDir": "data",
+    "shaderPacksDir": "shaderpacks",
+    "generatedDir": "generated",
+    "ui": {
+        "shortcut": "G",
+        "backdrop": 0.0,
+        "theme": "dark"
+    },
+    "shaders": {
+        "activePack": "",
+        "hotReload": true
+    },
+    "performance": {
+        "diagnosticsEnabled": true
+    },
+    "safety": {
+        "safeMode": false
+    }
+}
