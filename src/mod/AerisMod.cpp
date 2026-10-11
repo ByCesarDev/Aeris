@@ -198,13 +198,15 @@ bool AerisMod::load() {
     // 5. Suscribir listeners de comandos tempranamente en load() para no perder eventos entre load y enable
     auto& bus = ll::event::EventBus::getInstance();
     mServerCommandListener = bus.emplaceListener<ll::event::command::ServerCommandRegisterEvent>(
-        [this](ll::event::command::ServerCommandRegisterEvent&) {
+        [this](ll::event::command::ServerCommandRegisterEvent& ev) {
+            getSelf().getLogger().info("ServerCommandRegisterEvent received (clientHosted: {})", ev.isClientHostedServer());
             registerCommands(false);
         }
     );
 
     mClientCommandListener = bus.emplaceListener<ll::event::command::ClientCommandRegisterEvent>(
         [this](ll::event::command::ClientCommandRegisterEvent&) {
+            getSelf().getLogger().info("ClientCommandRegisterEvent received");
             registerCommands(true);
         }
     );
@@ -231,8 +233,8 @@ bool AerisMod::enable() {
     // 2. Comprobar instalación de hooks nativos (bloqueados por defecto en modo seguro)
     MaterialHooks::getInstance().install();
 
-    // 3. Asegurar registro inmediato de comandos si los registros ya están inicializados
-    registerCommands(false);
+    // 3. Registrar en el cliente durante enable() si el registro de cliente está activo
+    // (El registro de servidor se realiza al entrar al mundo vía ServerCommandRegisterEvent)
     registerCommands(true);
 
     logger.info("Aeris enabled successfully");
