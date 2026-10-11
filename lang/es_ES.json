@@ -105,7 +105,7 @@
     "Gamma": "Gamma",
     "cmd.aeris.header": "§6[Aeris]§r v{0} por ByCesarDev",
     "cmd.aeris.desc": "Objetivo: Minecraft {0} | Shaders y Rendimiento",
-    "cmd.aeris.commands": "Comandos: /aeris help, /aeris info, /aeris version",
+    "cmd.aeris.commands": "Comandos: /aeris help, /aeris scan, /aeris list, /aeris rollback, /aeris info",
     "cmd.help.header": "§6=== Ayuda de Aeris ===§r",
     "cmd.help.aeris": "/aeris - Muestra información general del mod",
     "cmd.help.info": "/aeris info - Muestra el estado del sistema y compatibilidad",
@@ -127,5 +127,13 @@
     "cmd.list.item": "§a*§r {0} [{1}] ({2} parámetros) - {3}",
     "cmd.list.item_inactive": "  {0} [{1}] ({2} parámetros)",
     "cmd.help.scan": "/aeris scan - Reescanea la carpeta data/shaderpacks/",
-    "cmd.help.list": "/aeris list - Muestra la lista de paquetes de shaders"
+    "cmd.help.list": "/aeris list - Muestra la lista de paquetes de shaders",
+    "cmd.help.rollback": "/aeris rollback - Desactiva shaders y restaura materiales vanilla",
+    "cmd.rollback.success": "Materiales de shader desactivados. Materiales vanilla restaurados.",
+    "cmd.rollback.already_vanilla": "No hay ningún paquete de shaders activo. Ya se usan materiales vanilla.",
+    "cmd.info.materialRedirection": "Redirección de Materiales: {0}",
+    "cmd.info.hotReload": "Recarga en Caliente: {0}",
+    "cmd.info.state.supported": "§aSoportado§r",
+    "cmd.info.state.unsupported": "§cNo Soportado§r ({0})",
+    "cmd.info.state.unknown": "§eDesconocido§r ({0})"
 }

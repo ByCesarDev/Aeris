@@ -1,3 +1,4 @@
+#include "shaders/MaterialLoader.h"
 #include "shaders/ShaderPackManager.h"
 
 #include <algorithm>
@@ -561,6 +562,14 @@ bool ShaderPackManager::selectPack(std::string_view name) {
         ConfigManager::getInstance().config().shaders.activePack = prevActive;
         return false;
     }
+
+    // Actualizar MaterialLoader con los directorios de binarios precompilados del pack
+    std::vector<std::filesystem::path> prebuiltDirs = { pack->binsDir };
+    for (auto const& d : ShaderPackParser::collectPrebuiltDirs(pack->sourceDir, pack->activeSubpack)) {
+        prebuiltDirs.push_back(d);
+    }
+    MaterialLoader::getInstance().setActiveShaderPack(pack->name, std::move(prebuiltDirs));
+
     return true;
 }
 
@@ -572,6 +581,8 @@ bool ShaderPackManager::deactivatePack() {
         ConfigManager::getInstance().config().shaders.activePack = prevActive;
         return false;
     }
+
+    MaterialLoader::getInstance().restoreVanilla();
     return true;
 }
 

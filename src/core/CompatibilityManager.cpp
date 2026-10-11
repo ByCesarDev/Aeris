@@ -8,6 +8,31 @@
 
 namespace aeris {
 
+std::string_view capabilityStateToString(CapabilityState state) {
+    switch (state) {
+    case CapabilityState::Supported:
+        return "Supported";
+    case CapabilityState::Unsupported:
+        return "Unsupported";
+    case CapabilityState::Unknown:
+    default:
+        return "Unknown";
+    }
+}
+
+std::string_view featureCapabilityToString(FeatureCapability cap) {
+    switch (cap) {
+    case FeatureCapability::MaterialRedirection:
+        return "MaterialRedirection";
+    case FeatureCapability::MaterialHotReload:
+        return "MaterialHotReload";
+    case FeatureCapability::GraphicsModeSwitch:
+        return "GraphicsModeSwitch";
+    default:
+        return "UnknownCapability";
+    }
+}
+
 CompatibilityManager::CompatibilityManager() {
     reset();
 }
@@ -21,8 +46,60 @@ void CompatibilityManager::reset() {
     mDetectedVersion         = "Unknown";
     mDetectedLoaderVersion   = "Unknown";
     mVersionCompatible       = false;
-    mHotReloadSupported      = false;
-    mGraphicsSwitchSupported = false;
+
+    mMaterialRedirection = {CapabilityState::Unknown, "Not evaluated"};
+    mMaterialHotReload   = {CapabilityState::Unknown, "Not evaluated"};
+    mGraphicsModeSwitch  = {CapabilityState::Unknown, "Not evaluated"};
+}
+
+CapabilityState CompatibilityManager::getCapabilityState(FeatureCapability cap) const {
+    switch (cap) {
+    case FeatureCapability::MaterialRedirection:
+        return mMaterialRedirection.state;
+    case FeatureCapability::MaterialHotReload:
+        return mMaterialHotReload.state;
+    case FeatureCapability::GraphicsModeSwitch:
+        return mGraphicsModeSwitch.state;
+    default:
+        return CapabilityState::Unknown;
+    }
+}
+
+std::string CompatibilityManager::getCapabilityReason(FeatureCapability cap) const {
+    switch (cap) {
+    case FeatureCapability::MaterialRedirection:
+        return mMaterialRedirection.reason;
+    case FeatureCapability::MaterialHotReload:
+        return mMaterialHotReload.reason;
+    case FeatureCapability::GraphicsModeSwitch:
+        return mGraphicsModeSwitch.reason;
+    default:
+        return "Unknown capability";
+    }
+}
+
+void CompatibilityManager::setCapabilityState(FeatureCapability cap, CapabilityState state, std::string reason) {
+    CapabilityInfo* target = nullptr;
+    switch (cap) {
+    case FeatureCapability::MaterialRedirection:
+        target = &mMaterialRedirection;
+        break;
+    case FeatureCapability::MaterialHotReload:
+        target = &mMaterialHotReload;
+        break;
+    case FeatureCapability::GraphicsModeSwitch:
+        target = &mGraphicsModeSwitch;
+        break;
+    }
+
+    if (target) {
+        target->state = state;
+        if (!reason.empty()) {
+            target->reason = std::move(reason);
+        } else {
+            target->reason = std::string(capabilityStateToString(state));
+        }
+    }
 }
 
 bool CompatibilityManager::isVersionMatching(std::string_view version, std::string_view target) {
@@ -65,9 +142,17 @@ void CompatibilityManager::initialize(std::string gameVersion, std::string loade
 
     mVersionCompatible = isVersionMatching(mDetectedVersion, targetVersion());
 
-    // Ninguna capacidad nativa de RenderDragon se asume activa hasta ser comprobada en su propio subsistema
-    mHotReloadSupported      = false;
-    mGraphicsSwitchSupported = false;
+    if (!mVersionCompatible) {
+        std::string reason = "Target version mismatch (detected: " + mDetectedVersion + ", required: " + std::string(targetVersion()) + ")";
+        setCapabilityState(FeatureCapability::MaterialRedirection, CapabilityState::Unsupported, reason);
+        setCapabilityState(FeatureCapability::MaterialHotReload, CapabilityState::Unsupported, reason);
+        setCapabilityState(FeatureCapability::GraphicsModeSwitch, CapabilityState::Unsupported, reason);
+    } else {
+        // En versión compatible, las capacidades empiezan en Unknown hasta ser verificadas en runtime por sus subsistemas
+        setCapabilityState(FeatureCapability::MaterialRedirection, CapabilityState::Unknown, "Pending signature verification in 1.26.51.01");
+        setCapabilityState(FeatureCapability::MaterialHotReload, CapabilityState::Unknown, "Pending runtime hook and frame builder resolution");
+        setCapabilityState(FeatureCapability::GraphicsModeSwitch, CapabilityState::Unknown, "Pending options ID verification");
+    }
 }
 
 } // namespace aeris

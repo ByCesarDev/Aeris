@@ -15,11 +15,29 @@
 
 #include "core/CompatibilityManager.h"
 #include "core/ConfigManager.h"
+#include "hooks/MaterialHooks.h"
 #include "localization/LocalizationManager.h"
 #include "optimization/PerformanceManager.h"
+#include "shaders/MaterialLoader.h"
 #include "shaders/ShaderPackManager.h"
 
 namespace aeris {
+
+namespace {
+
+std::string formatCapabilityDisplay(CapabilityState state, std::string const& reason) {
+    switch (state) {
+    case CapabilityState::Supported:
+        return tr("cmd.info.state.supported");
+    case CapabilityState::Unsupported:
+        return trFormat("cmd.info.state.unsupported", {reason});
+    case CapabilityState::Unknown:
+    default:
+        return trFormat("cmd.info.state.unknown", {reason});
+    }
+}
+
+} // namespace
 
 AerisMod& AerisMod::getInstance() {
     static AerisMod instance;
@@ -73,12 +91,19 @@ bool AerisMod::enable() {
     auto& logger = getSelf().getLogger();
     logger.info("Aeris enabling...");
 
-    // Asegurar existencia de directorios de datos y escanear paquetes
+    // 1. Asegurar existencia de directorios de datos y escanear paquetes
     auto packsDir = getPacksDir();
     auto genDir   = getGeneratedDir();
     ShaderPackManager::getInstance().scan(packsDir, genDir);
 
-    // Registrar comandos de cliente internacionalizados
+    // 2. Intentar inicializar ganchos nativos con verificación estricta de seguridad
+    // NOTA: No activa shaders por defecto. El juego inicia en 100% vainilla.
+    if (!MaterialHooks::getInstance().install()) {
+        logger.info("MaterialHooks: Hooks are currently inactive or safely bypassed [{}]",
+            MaterialHooks::getInstance().lastError().empty() ? "Unverified environment" : MaterialHooks::getInstance().lastError());
+    }
+
+    // 3. Registrar comandos de cliente internacionalizados
     mCommandListener = ll::event::EventBus::getInstance().emplaceListener<ll::event::command::ClientCommandRegisterEvent>(
         [](ll::event::command::ClientCommandRegisterEvent&) {
             auto& cmd = ll::command::CommandRegistrar::getInstance(true).getOrCreateCommand(
@@ -99,14 +124,15 @@ bool AerisMod::enable() {
                 output.success(tr("cmd.help.aeris"));
                 output.success(tr("cmd.help.scan"));
                 output.success(tr("cmd.help.list"));
+                output.success(tr("cmd.help.rollback"));
                 output.success(tr("cmd.help.info"));
                 output.success(tr("cmd.help.version"));
             });
 
             cmd.overload().text("scan").execute([](CommandOrigin const&, CommandOutput& output) {
-                auto packsDir = AerisMod::getInstance().getPacksDir();
-                auto genDir   = AerisMod::getInstance().getGeneratedDir();
-                ShaderPackManager::getInstance().scan(packsDir, genDir);
+                auto pDir = AerisMod::getInstance().getPacksDir();
+                auto gDir = AerisMod::getInstance().getGeneratedDir();
+                ShaderPackManager::getInstance().scan(pDir, gDir);
                 auto count = std::to_string(ShaderPackManager::getInstance().packs().size());
                 output.success(trFormat("cmd.scan.success", {count}));
             });
@@ -132,6 +158,18 @@ bool AerisMod::enable() {
                 }
             });
 
+            cmd.overload().text("rollback").execute([](CommandOrigin const&, CommandOutput& output) {
+                if (!MaterialLoader::getInstance().isOverrideActive() &&
+                    ShaderPackManager::getInstance().activePack() == nullptr) {
+                    output.success(tr("cmd.rollback.already_vanilla"));
+                    return;
+                }
+
+                MaterialHooks::getInstance().restoreVanilla();
+                ShaderPackManager::getInstance().deactivatePack();
+                output.success(tr("cmd.rollback.success"));
+            });
+
             cmd.overload().text("info").execute([](CommandOrigin const&, CommandOutput& output) {
                 auto const& compat = CompatibilityManager::getInstance();
                 output.success(tr("cmd.info.header"));
@@ -139,7 +177,18 @@ bool AerisMod::enable() {
                 output.success(trFormat("cmd.info.loader", {compat.detectedLoaderVersion()}));
                 output.success(trFormat("cmd.info.target", {std::string(compat.targetVersion())}));
                 output.success(trFormat("cmd.info.compatible", {compat.isVersionCompatible() ? tr("cmd.info.yes") : tr("cmd.info.no")}));
-                output.success(trFormat("cmd.info.graphicsSwitch", {compat.isGraphicsSwitchSupported() ? tr("cmd.info.ready") : tr("cmd.info.unavailable")}));
+
+                auto redirState  = compat.getCapabilityState(FeatureCapability::MaterialRedirection);
+                auto redirReason = compat.getCapabilityReason(FeatureCapability::MaterialRedirection);
+                output.success(trFormat("cmd.info.materialRedirection", {formatCapabilityDisplay(redirState, redirReason)}));
+
+                auto hotState  = compat.getCapabilityState(FeatureCapability::MaterialHotReload);
+                auto hotReason = compat.getCapabilityReason(FeatureCapability::MaterialHotReload);
+                output.success(trFormat("cmd.info.hotReload", {formatCapabilityDisplay(hotState, hotReason)}));
+
+                auto switchState  = compat.getCapabilityState(FeatureCapability::GraphicsModeSwitch);
+                auto switchReason = compat.getCapabilityReason(FeatureCapability::GraphicsModeSwitch);
+                output.success(trFormat("cmd.info.graphicsSwitch", {formatCapabilityDisplay(switchState, switchReason)}));
             });
 
             cmd.overload().text("version").execute([](CommandOrigin const&, CommandOutput& output) {
@@ -156,7 +205,11 @@ bool AerisMod::disable() {
     auto& logger = getSelf().getLogger();
     logger.info("Aeris disabling...");
 
-    // Liberar suscripción a comandos de forma limpia
+    // 1. Restaurar materiales vainilla y desenganchar detours de memoria
+    MaterialHooks::getInstance().restoreVanilla();
+    MaterialHooks::getInstance().uninstall();
+
+    // 2. Liberar suscripción a comandos de forma limpia
     if (mCommandListener) {
         ll::event::EventBus::getInstance().removeListener(mCommandListener);
         mCommandListener.reset();

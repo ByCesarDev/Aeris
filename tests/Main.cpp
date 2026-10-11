@@ -5,6 +5,7 @@ void runCompatibilityTests();
 void runLocalizationTests();
 void runPerformanceTests();
 void runShaderPackTests();
+void runMaterialLoaderTests();
 
 int main() {
     std::cout << "========================================\n";
@@ -16,6 +17,7 @@ int main() {
     runLocalizationTests();
     runPerformanceTests();
     runShaderPackTests();
+    runMaterialLoaderTests();
 
     std::cout << "\n========================================\n";
     std::cout << "Results: " << gTestCount << " ran, " << gTestFailures << " failed.\n";

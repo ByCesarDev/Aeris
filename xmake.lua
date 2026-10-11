@@ -100,5 +100,6 @@ target("AerisTests")
         "src/localization/LocalizationManager.cpp",
         "src/optimization/PerformanceManager.cpp",
         "src/shaders/ShaderPackParser.cpp",
-        "src/shaders/ShaderPackManager.cpp"
+        "src/shaders/ShaderPackManager.cpp",
+        "src/shaders/MaterialLoader.cpp"
     )
