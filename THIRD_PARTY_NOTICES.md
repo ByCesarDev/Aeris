@@ -22,3 +22,7 @@ Aeris está licenciado bajo la GNU Lesser General Public License v3.0 (LGPL-3.0)
 - **[LeviLamina](https://github.com/LiteLDev/LeviLamina)**: LGPL-3.0.
   Client mod runtime. Users obtain LeviLamina separately.
 - **[LeviBuildScript](https://github.com/LiteLDev/LeviBuildScript)**: Build-time dependency for mod linking and packaging rules.
+- **[miniz](https://github.com/richgel999/miniz)**: MIT License.
+  Used for in-process, validated archive extraction and ZIP slip / archive bomb mitigation.
+- **[nlohmann/json](https://github.com/nlohmann/json)**: MIT License.
+  JSON parser used for configuration and pack manifest metadata.

@@ -3,11 +3,20 @@
 #include <filesystem>
 #include <string>
 #include <string_view>
+#include <unordered_set>
 #include <vector>
 
 #include "shaders/ShaderPack.h"
 
 namespace aeris {
+
+struct ArchiveLimits {
+    std::size_t   maxFiles = 5000;
+    std::uint64_t maxTotalUncompressedBytes = 350 * 1024 * 1024; // 350 MB
+    std::uint64_t maxSingleFileBytes = 100 * 1024 * 1024;        // 100 MB
+    std::size_t   maxDirectoryDepth = 10;
+    double        maxCompressionRatio = 200.0;
+};
 
 class ShaderPackManager {
 public:
@@ -26,26 +35,36 @@ public:
     // Devuelve el pack actualmente activo según ConfigManager (nullptr si ninguno o "OFF")
     [[nodiscard]] ShaderPack const* activePack() const;
 
-    // Selecciona un pack por nombre y persiste la elección en la configuración
+    // Selecciona un pack por nombre y persiste la elección de manera transaccional
     bool selectPack(std::string_view name);
 
-    // Desactiva el pack activo (vuelve al estado vanilla)
-    void deactivatePack();
+    // Desactiva el pack activo (vuelve al estado vanilla) de manera transaccional
+    bool deactivatePack();
+
+    // Selecciona explícitamente un subpack y actualiza los materiales
+    bool selectSubpack(std::string_view packName, std::string_view subpackName);
 
     // Importa un archivo .zip o .mcpack hacia data/shaderpacks/
     bool importPack(std::filesystem::path const& sourceFile, std::string& outError);
 
-    // Elimina un paquete de shaders y sus datos generados
+    // Elimina un paquete verificando que las rutas pertenezcan a los directorios administrados
     bool deletePack(std::string_view name, std::string& outError);
 
-    // Modifica un parámetro del pack y persiste el cambio en su archivo .txt
+    // Modifica un parámetro del pack validando su valor y guardándolo transaccionalmente
     bool setParameterValue(std::string_view packName, std::string_view paramName, std::string value);
 
-    // Extrae de forma segura un archivo .zip o .mcpack validando que no haya path traversal
-    static bool extractArchive(std::filesystem::path const& archive, std::filesystem::path const& destDir);
+    // Extrae en un directorio temporal aislado con inspección de entradas y verificación de integridad
+    static bool extractArchive(
+        std::filesystem::path const& archive,
+        std::filesystem::path const& destDir,
+        ArchiveLimits const& limits = {}
+    );
 
     // Comprueba si un archivo o directorio tiene extensión de shader pack válida (.zip o .mcpack)
     static bool isSupportedArchive(std::filesystem::path const& file);
+
+    // Verifica que una ruta objetivo resida estrictamente dentro de un directorio base permitido
+    static bool isPathInside(std::filesystem::path const& base, std::filesystem::path const& target);
 
     void clear() { mPacks.clear(); }
 
@@ -65,7 +84,14 @@ private:
     );
 
     bool ensureExtracted(std::filesystem::path const& archive, std::filesystem::path const& dest);
-    std::filesystem::path normalizeSourceDir(std::filesystem::path const& dir);
+
+    std::filesystem::path normalizeSourceDir(
+        std::filesystem::path const& dir,
+        int maxDepth = 3,
+        std::unordered_set<std::string>* visited = nullptr
+    );
+
+    void copyMaterialsToBins(ShaderPack const& pack);
 };
 
 } // namespace aeris

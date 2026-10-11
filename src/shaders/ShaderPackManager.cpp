@@ -1,18 +1,12 @@
 #include "shaders/ShaderPackManager.h"
 
 #include <algorithm>
+#include <cctype>
 #include <fstream>
-#include <system_error>
+#include <memory>
+#include <vector>
 
-#ifdef _WIN32
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#include <Windows.h>
-#endif
+#include "miniz/miniz.h"
 
 #include "core/ConfigManager.h"
 #include "shaders/ShaderPackParser.h"
@@ -21,53 +15,91 @@ namespace aeris {
 
 namespace {
 
-std::string toLowerStr(std::string s) {
-    std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) {
-        return static_cast<char>(std::tolower(c));
-    });
+std::string toLowerStr(std::string_view sv) {
+    std::string s;
+    s.reserve(sv.size());
+    for (char c : sv) {
+        s.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+    }
     return s;
 }
 
-#ifdef _WIN32
-int runHidden(std::wstring cmdline) {
-    STARTUPINFOW si{};
-    si.cb          = sizeof(si);
-    si.dwFlags     = STARTF_USESHOWWINDOW;
-    si.wShowWindow = SW_HIDE;
-
-    PROCESS_INFORMATION pi{};
-    if (!CreateProcessW(
-            nullptr,
-            cmdline.data(),
-            nullptr,
-            nullptr,
-            FALSE,
-            CREATE_NO_WINDOW,
-            nullptr,
-            nullptr,
-            &si,
-            &pi
-        )) {
-        return -1;
-    }
-    WaitForSingleObject(pi.hProcess, INFINITE);
-    DWORD code = 1;
-    GetExitCodeProcess(pi.hProcess, &code);
-    CloseHandle(pi.hThread);
-    CloseHandle(pi.hProcess);
-    return static_cast<int>(code);
-}
-#endif
-
 bool hasPackMarker(std::filesystem::path const& dir) {
     std::error_code ec;
-    return std::filesystem::is_regular_file(dir / "project.json", ec)
-        || std::filesystem::is_regular_file(dir / "shaders.properties", ec)
-        || std::filesystem::is_regular_file(dir / "manifest.json", ec)
-        || ShaderPackParser::hasMaterialBin(dir);
+    if (!std::filesystem::is_directory(dir, ec)) return false;
+
+    if (std::filesystem::is_regular_file(dir / "shaders.properties", ec)) return true;
+    if (std::filesystem::is_regular_file(dir / "manifest.json", ec)) return true;
+    if (std::filesystem::is_directory(dir / "renderer", ec)) return true;
+    if (std::filesystem::is_directory(dir / "subpacks", ec)) return true;
+
+    return false;
+}
+
+bool isSafeEntryPath(std::string_view entryName, std::size_t maxDepth) {
+    if (entryName.empty()) return false;
+    if (entryName.find('\0') != std::string_view::npos) return false;
+
+    // Rechazar rutas absolutas o letras de unidad Windows
+    if (entryName.front() == '/' || entryName.front() == '\\') return false;
+    if (entryName.size() >= 2 && entryName[1] == ':') return false;
+
+    std::size_t depth = 0;
+    std::size_t start = 0;
+    while (start < entryName.size()) {
+        std::size_t next = entryName.find_first_of("/\\", start);
+        std::string_view part = (next == std::string_view::npos)
+            ? entryName.substr(start)
+            : entryName.substr(start, next - start);
+
+        if (!part.empty()) {
+            if (part == "..") return false; // Intento de Path Traversal
+            if (part.find(':') != std::string_view::npos) return false; // Stream NTFS
+            depth++;
+            if (depth > maxDepth) return false;
+        }
+
+        if (next == std::string_view::npos) break;
+        start = next + 1;
+    }
+    return true;
+}
+
+std::uint32_t computeFileCrc32(std::filesystem::path const& path) {
+    std::ifstream stream(path, std::ios::binary);
+    if (!stream.is_open()) return 0;
+
+    mz_ulong crc = mz_crc32(MZ_CRC32_INIT, nullptr, 0);
+    std::vector<unsigned char> buffer(65536);
+
+    while (stream) {
+        stream.read(reinterpret_cast<char*>(buffer.data()), buffer.size());
+        std::streamsize bytes = stream.gcount();
+        if (bytes > 0) {
+            crc = mz_crc32(crc, buffer.data(), static_cast<std::size_t>(bytes));
+        }
+    }
+    return static_cast<std::uint32_t>(crc);
 }
 
 } // namespace
+
+bool ShaderPackManager::isPathInside(std::filesystem::path const& base, std::filesystem::path const& target) {
+    std::error_code ec;
+    if (base.empty() || target.empty()) return false;
+
+    auto cBase   = std::filesystem::weakly_canonical(base, ec);
+    if (ec) return false;
+
+    auto cTarget = std::filesystem::weakly_canonical(target, ec);
+    if (ec) return false;
+
+    auto rel = cTarget.lexically_relative(cBase);
+    if (rel.empty()) return false;
+
+    auto s = rel.generic_string();
+    return s != "." && !s.starts_with("..") && !rel.is_absolute();
+}
 
 ShaderPackManager& ShaderPackManager::getInstance() {
     static ShaderPackManager instance;
@@ -79,28 +111,204 @@ bool ShaderPackManager::isSupportedArchive(std::filesystem::path const& file) {
     return ext == ".zip" || ext == ".mcpack";
 }
 
-bool ShaderPackManager::extractArchive(std::filesystem::path const& archive, std::filesystem::path const& destDir) {
+bool ShaderPackManager::extractArchive(
+    std::filesystem::path const& archive,
+    std::filesystem::path const& destDir,
+    ArchiveLimits const& limits
+) {
     std::error_code ec;
     if (!std::filesystem::is_regular_file(archive, ec)) return false;
 
-    // Validación contra Path Traversal en rutas de origen y destino
+    // Validación previa contra Path Traversal en el destino solicitado
     auto destStr = destDir.generic_string();
     if (destStr.find("..") != std::string::npos) return false;
 
-    std::filesystem::create_directories(destDir, ec);
-    if (ec) return false;
-
+    FILE* fp = nullptr;
 #ifdef _WIN32
-    // Windows 10/11 incluye tar.exe nativo capaz de descomprimir archivos zip y mcpack
-    std::wstring cmd = L"tar.exe -xf \"" + archive.wstring() + L"\" -C \"" + destDir.wstring() + L"\"";
-    int code = runHidden(std::move(cmd));
-    if (code != 0) return false;
-
-    // Verificación de integridad post-extracción
-    return std::filesystem::is_directory(destDir, ec);
+    if (_wfopen_s(&fp, archive.wstring().c_str(), L"rb") != 0) fp = nullptr;
 #else
-    return false;
+    fp = std::fopen(archive.string().c_str(), "rb");
 #endif
+    if (!fp) return false;
+
+    mz_zip_archive zip;
+    std::memset(&zip, 0, sizeof(zip));
+
+    if (!mz_zip_reader_init_cfile(&zip, fp, 0, 0)) {
+        std::fclose(fp);
+        return false;
+    }
+
+    auto cleanup = [&]() {
+        mz_zip_reader_end(&zip);
+        std::fclose(fp);
+    };
+
+    mz_uint numFiles = mz_zip_reader_get_num_files(&zip);
+    if (numFiles == 0 || numFiles > limits.maxFiles) {
+        cleanup();
+        return false;
+    }
+
+    // 1. Inspección exhaustiva de todas las entradas ANTES de extraer
+    std::uint64_t totalUncompressed = 0;
+    std::vector<std::string> entryNames;
+    entryNames.reserve(numFiles);
+
+    for (mz_uint i = 0; i < numFiles; ++i) {
+        char filenameBuf[1024];
+        if (!mz_zip_reader_get_filename(&zip, i, filenameBuf, sizeof(filenameBuf))) {
+            cleanup();
+            return false;
+        }
+
+        std::string entryName(filenameBuf);
+        if (!isSafeEntryPath(entryName, limits.maxDirectoryDepth)) {
+            cleanup();
+            return false;
+        }
+
+        mz_zip_archive_file_stat stat;
+        if (!mz_zip_reader_file_stat(&zip, i, &stat)) {
+            cleanup();
+            return false;
+        }
+
+        // Detección y rechazo de enlaces simbólicos (POSIX S_IFLNK = 0120000)
+        bool isSymlink = ((stat.m_version_made_by >> 8) == 3 && ((stat.m_external_attr >> 16) & 0170000) == 0120000);
+        if (isSymlink) {
+            cleanup();
+            return false;
+        }
+
+        if (stat.m_uncomp_size > limits.maxSingleFileBytes) {
+            cleanup();
+            return false;
+        }
+
+        totalUncompressed += stat.m_uncomp_size;
+        if (totalUncompressed > limits.maxTotalUncompressedBytes) {
+            cleanup();
+            return false;
+        }
+
+        // Mitigación de Zip Bombs: ratio de compresión anómalo
+        if (stat.m_comp_size > 0 && stat.m_uncomp_size > 65536) {
+            double ratio = static_cast<double>(stat.m_uncomp_size) / static_cast<double>(stat.m_comp_size);
+            if (ratio > limits.maxCompressionRatio) {
+                cleanup();
+                return false;
+            }
+        }
+
+        entryNames.push_back(std::move(entryName));
+    }
+
+    // 2. Extracción aislada en directorio temporal de staging
+    auto stagingDir = destDir.parent_path() / (destDir.filename().string() + ".staging_tmp");
+    std::filesystem::remove_all(stagingDir, ec);
+    std::filesystem::create_directories(stagingDir, ec);
+    if (ec) {
+        cleanup();
+        return false;
+    }
+
+    bool extractionOk = true;
+    for (mz_uint i = 0; i < numFiles; ++i) {
+        auto const& entryName = entryNames[i];
+        auto targetPath = stagingDir / entryName;
+
+        // Validar contención física estricta dentro del directorio de staging
+        if (!isPathInside(stagingDir, targetPath)) {
+            extractionOk = false;
+            break;
+        }
+
+        if (mz_zip_reader_is_file_a_directory(&zip, i)) {
+            std::filesystem::create_directories(targetPath, ec);
+            if (ec) { extractionOk = false; break; }
+            continue;
+        }
+
+        std::filesystem::create_directories(targetPath.parent_path(), ec);
+        if (ec) { extractionOk = false; break; }
+
+        std::size_t uncompSize = 0;
+        void* data = mz_zip_reader_extract_to_heap(&zip, i, &uncompSize, 0);
+        if (!data) {
+            extractionOk = false;
+            break;
+        }
+
+        std::ofstream out(targetPath, std::ios::binary | std::ios::trunc);
+        if (out.is_open()) {
+            out.write(reinterpret_cast<char const*>(data), uncompSize);
+            out.flush();
+            if (!out.good()) extractionOk = false;
+        } else {
+            extractionOk = false;
+        }
+
+        mz_free(data);
+        if (!extractionOk) break;
+    }
+
+    cleanup();
+
+    if (!extractionOk) {
+        std::filesystem::remove_all(stagingDir, ec);
+        return false;
+    }
+
+    // 3. Verificación de integridad: el contenido debe ser un shaderpack válido
+    bool hasValidContent = hasPackMarker(stagingDir) ||
+                           hasPackMarker(stagingDir / "src") ||
+                           ShaderPackParser::hasMaterialBin(stagingDir) ||
+                           !ShaderPackParser::findPrebuiltMaterials(stagingDir).empty();
+
+    if (!hasValidContent) {
+        // Explorar posibles subdirectorios únicos (ej: pack-main/)
+        for (auto const& e : std::filesystem::directory_iterator(stagingDir, ec)) {
+            if (e.is_directory(ec) && (hasPackMarker(e.path()) || !ShaderPackParser::findPrebuiltMaterials(e.path()).empty())) {
+                hasValidContent = true;
+                break;
+            }
+        }
+    }
+
+    if (!hasValidContent) {
+        std::filesystem::remove_all(stagingDir, ec);
+        return false;
+    }
+
+    // 4. Publicación atómica: preservar paquete anterior si la sustitución fallara
+    auto backupDir = destDir.parent_path() / (destDir.filename().string() + ".old_backup");
+    std::filesystem::remove_all(backupDir, ec);
+
+    bool hadExisting = std::filesystem::exists(destDir, ec);
+    if (hadExisting) {
+        std::filesystem::rename(destDir, backupDir, ec);
+        if (ec) {
+            std::filesystem::remove_all(stagingDir, ec);
+            return false;
+        }
+    }
+
+    std::filesystem::rename(stagingDir, destDir, ec);
+    if (ec) {
+        if (hadExisting) {
+            std::error_code restoreEc;
+            std::filesystem::rename(backupDir, destDir, restoreEc);
+        }
+        std::filesystem::remove_all(stagingDir, ec);
+        return false;
+    }
+
+    if (hadExisting) {
+        std::filesystem::remove_all(backupDir, ec);
+    }
+
+    return true;
 }
 
 bool ShaderPackManager::ensureExtracted(std::filesystem::path const& archive, std::filesystem::path const& dest) {
@@ -108,43 +316,60 @@ bool ShaderPackManager::ensureExtracted(std::filesystem::path const& archive, st
     auto lastWrite = std::filesystem::last_write_time(archive, ec);
     if (ec) return false;
 
-    auto mtime = static_cast<long long>(lastWrite.time_since_epoch().count());
-    auto marker = dest / ".source.timestamp";
+    auto fileSize = std::filesystem::file_size(archive, ec);
+    if (ec) return false;
 
-    if (std::filesystem::is_regular_file(marker, ec)) {
-        std::ifstream in(marker);
-        long long storedTime = 0;
-        if ((in >> storedTime) && storedTime == mtime) {
-            return true; // Ya extraído y actualizado
+    auto mtime = static_cast<long long>(lastWrite.time_since_epoch().count());
+    auto crc32 = computeFileCrc32(archive);
+
+    auto cacheMarker = dest / ".source.cache";
+    if (std::filesystem::is_regular_file(cacheMarker, ec) && std::filesystem::is_directory(dest, ec)) {
+        std::ifstream in(cacheMarker);
+        long long storedMtime = 0;
+        std::uint64_t storedSize = 0;
+        std::uint32_t storedCrc  = 0;
+        if ((in >> storedMtime >> storedSize >> storedCrc) &&
+            storedMtime == mtime &&
+            storedSize  == fileSize &&
+            storedCrc   == crc32) {
+            return true; // Contenido verificado e idéntico
         }
     }
-
-    std::filesystem::remove_all(dest, ec);
-    std::filesystem::create_directories(dest, ec);
 
     if (!extractArchive(archive, dest)) {
         return false;
     }
 
-    std::ofstream out(marker);
-    out << mtime;
+    std::ofstream out(cacheMarker);
+    out << mtime << " " << fileSize << " " << crc32;
     return true;
 }
 
-std::filesystem::path ShaderPackManager::normalizeSourceDir(std::filesystem::path const& dir) {
-    std::error_code ec;
-    if (hasPackMarker(dir)) return dir;
+std::filesystem::path ShaderPackManager::normalizeSourceDir(
+    std::filesystem::path const& dir,
+    int maxDepth,
+    std::unordered_set<std::string>* visited
+) {
+    if (maxDepth <= 0) return dir;
 
-    // Paquetes estructurados en subcarpeta src/
+    std::unordered_set<std::string> localVisited;
+    if (!visited) visited = &localVisited;
+
+    std::error_code ec;
+    auto canonical = std::filesystem::weakly_canonical(dir, ec).generic_string();
+    if (visited->count(canonical)) return dir; // Detección y ruptura de ciclo
+    visited->insert(canonical);
+
+    if (hasPackMarker(dir)) return dir;
     if (hasPackMarker(dir / "src")) return dir / "src";
 
-    // Envoltorio de un solo subdirectorio (ej: repo-main/)
     std::vector<std::filesystem::path> subdirs;
     for (auto const& e : std::filesystem::directory_iterator(dir, ec)) {
         if (e.is_directory(ec)) subdirs.push_back(e.path());
     }
+
     if (subdirs.size() == 1) {
-        auto inner = normalizeSourceDir(subdirs.front());
+        auto inner = normalizeSourceDir(subdirs.front(), maxDepth - 1, visited);
         if (hasPackMarker(inner) || std::filesystem::is_directory(inner / "renderer", ec)) {
             return inner;
         }
@@ -176,20 +401,57 @@ ShaderPack const* ShaderPackManager::activePack() const {
 
 bool ShaderPackManager::selectPack(std::string_view name) {
     if (name.empty() || name == "OFF" || name == "NONE") {
-        deactivatePack();
-        return true;
+        return deactivatePack();
     }
 
     auto* pack = findPack(name);
     if (!pack) return false;
 
+    // Transaccional: guardar valor previo y revertir si el guardado falla
+    auto const prevActive = ConfigManager::getInstance().config().shaders.activePack;
     ConfigManager::getInstance().config().shaders.activePack = std::string(name);
-    return ConfigManager::getInstance().save();
+
+    if (!ConfigManager::getInstance().save()) {
+        ConfigManager::getInstance().config().shaders.activePack = prevActive;
+        return false;
+    }
+    return true;
 }
 
-void ShaderPackManager::deactivatePack() {
+bool ShaderPackManager::deactivatePack() {
+    auto const prevActive = ConfigManager::getInstance().config().shaders.activePack;
     ConfigManager::getInstance().config().shaders.activePack.clear();
-    ConfigManager::getInstance().save();
+
+    if (!ConfigManager::getInstance().save()) {
+        ConfigManager::getInstance().config().shaders.activePack = prevActive;
+        return false;
+    }
+    return true;
+}
+
+bool ShaderPackManager::selectSubpack(std::string_view packName, std::string_view subpackName) {
+    auto* pack = findPackMutable(packName);
+    if (!pack) return false;
+
+    bool exists = false;
+    for (auto const& sub : pack->subpacks) {
+        if (sub.folderName == subpackName) {
+            exists = true;
+            break;
+        }
+    }
+    if (!exists) return false;
+
+    auto prevSubpack = pack->activeSubpack;
+    pack->activeSubpack = std::string(subpackName);
+
+    if (!ShaderPackParser::saveSettings(*pack, pack->settingsPath)) {
+        pack->activeSubpack = std::move(prevSubpack); // Rollback
+        return false;
+    }
+
+    copyMaterialsToBins(*pack);
+    return true;
 }
 
 bool ShaderPackManager::setParameterValue(std::string_view packName, std::string_view paramName, std::string value) {
@@ -198,8 +460,19 @@ bool ShaderPackManager::setParameterValue(std::string_view packName, std::string
 
     for (auto& p : pack->parameters) {
         if (p.name == paramName) {
-            p.current = std::move(value);
-            return ShaderPackParser::saveSettings(*pack, pack->settingsPath);
+            std::string normalized;
+            if (!ShaderPackParser::validateParameterValue(p, value, normalized)) {
+                return false;
+            }
+
+            auto prev = p.current;
+            p.current = std::move(normalized);
+
+            if (!ShaderPackParser::saveSettings(*pack, pack->settingsPath)) {
+                p.current = std::move(prev); // Rollback
+                return false;
+            }
+            return true;
         }
     }
     return false;
@@ -231,6 +504,13 @@ bool ShaderPackManager::importPack(std::filesystem::path const& sourceFile, std:
 }
 
 bool ShaderPackManager::deletePack(std::string_view name, std::string& outError) {
+    if (name.empty() || name == "." || name == ".." ||
+        name.find('/') != std::string_view::npos ||
+        name.find('\\') != std::string_view::npos) {
+        outError = "Invalid pack name";
+        return false;
+    }
+
     auto* pack = findPack(name);
     if (!pack) {
         outError = "Pack not found: " + std::string(name);
@@ -238,15 +518,38 @@ bool ShaderPackManager::deletePack(std::string_view name, std::string& outError)
     }
 
     std::error_code ec;
+
+    // Verificación estricta de límites: nunca borrar rutas fuera de directorios administrados
     if (!pack->archivePath.empty()) {
+        if (!isPathInside(mPacksRoot, pack->archivePath)) {
+            outError = "Security violation: archive path outside managed packs directory";
+            return false;
+        }
         std::filesystem::remove(pack->archivePath, ec);
     } else {
+        if (!isPathInside(mPacksRoot, pack->sourceDir) && !isPathInside(mGeneratedRoot, pack->sourceDir)) {
+            outError = "Security violation: source directory outside managed directories";
+            return false;
+        }
         std::filesystem::remove_all(pack->sourceDir, ec);
     }
 
-    // Limpiar directorio generado y archivo de ajustes
-    std::filesystem::remove_all(mGeneratedRoot / std::string(name), ec);
-    std::filesystem::remove(pack->settingsPath, ec);
+    auto genPackDir = mGeneratedRoot / std::string(name);
+    if (std::filesystem::exists(genPackDir, ec)) {
+        if (!isPathInside(mGeneratedRoot, genPackDir)) {
+            outError = "Security violation: generated path outside managed root";
+            return false;
+        }
+        std::filesystem::remove_all(genPackDir, ec);
+    }
+
+    if (!pack->settingsPath.empty() && std::filesystem::exists(pack->settingsPath, ec)) {
+        if (!isPathInside(mPacksRoot, pack->settingsPath)) {
+            outError = "Security violation: settings file outside managed packs directory";
+            return false;
+        }
+        std::filesystem::remove(pack->settingsPath, ec);
+    }
 
     if (ConfigManager::getInstance().config().shaders.activePack == name) {
         deactivatePack();
@@ -254,6 +557,46 @@ bool ShaderPackManager::deletePack(std::string_view name, std::string& outError)
 
     scan(mPacksRoot, mGeneratedRoot);
     return true;
+}
+
+void ShaderPackManager::copyMaterialsToBins(ShaderPack const& pack) {
+    std::error_code ec;
+    std::vector<std::filesystem::path> prebuiltRoots;
+    prebuiltRoots.push_back(pack.sourceDir);
+
+    std::vector<std::filesystem::path> dirs;
+    auto addDir = [&](std::filesystem::path const& d) {
+        std::error_code e;
+        if (!std::filesystem::is_directory(d, e) || !ShaderPackParser::hasMaterialBin(d)) return;
+        if (std::find(dirs.begin(), dirs.end(), d) != dirs.end()) return;
+        dirs.push_back(d);
+    };
+
+    if (!pack.prebuiltDir.empty()) addDir(pack.prebuiltDir);
+
+    for (auto const& root : prebuiltRoots) {
+        for (auto const& d : ShaderPackParser::collectPrebuiltDirs(root, pack.activeSubpack)) {
+            addDir(d);
+        }
+    }
+
+    if (!dirs.empty()) {
+        std::filesystem::create_directories(pack.binsDir, ec);
+        for (auto const& dir : dirs) {
+            for (auto const& e : std::filesystem::directory_iterator(dir, ec)) {
+                if (!e.is_regular_file(ec)) continue;
+                auto filename = e.path().filename().string();
+                if (filename.ends_with(".material.bin")) {
+                    std::filesystem::copy_file(
+                        e.path(),
+                        pack.binsDir / filename,
+                        std::filesystem::copy_options::overwrite_existing,
+                        ec
+                    );
+                }
+            }
+        }
+    }
 }
 
 void ShaderPackManager::scan(std::filesystem::path const& packsRoot, std::filesystem::path const& generatedRoot) {
@@ -288,19 +631,19 @@ void ShaderPackManager::scan(std::filesystem::path const& packsRoot, std::filesy
         if (!isSupportedArchive(entry.path())) continue;
 
         auto stemName = entry.path().stem().string();
-        auto srcDir   = generatedRoot / stemName / "src";
-        auto binsDir  = generatedRoot / stemName / "compiled";
+        if (toLowerStr(stemName) == "vanilla") continue;
+
+        auto packGenDir = generatedRoot / stemName;
+        auto srcDir     = packGenDir / "src";
+        auto binsDir    = packGenDir / "compiled";
 
         if (!ensureExtracted(entry.path(), srcDir)) {
-            // Incluso si la extracción falla, creamos la entrada para que sea visible en la UI
-            mPacks.push_back(
-                loadPack(srcDir, entry.path(), binsDir, packsRoot / (fileName + ".txt"), srcDir)
-            );
-            continue;
+            continue; // Extracción fallida o archivo inseguro/corrupto ignorado
         }
 
+        auto normalizedSrc = normalizeSourceDir(srcDir);
         mPacks.push_back(
-            loadPack(normalizeSourceDir(srcDir), entry.path(), binsDir, packsRoot / (fileName + ".txt"), srcDir)
+            loadPack(normalizedSrc, entry.path(), binsDir, packsRoot / (entry.path().filename().string() + ".txt"), srcDir)
         );
     }
 }
@@ -314,7 +657,7 @@ ShaderPack ShaderPackManager::loadPack(
 ) {
     ShaderPack pack;
     if (!packArchive.empty()) {
-        pack.name = packArchive.stem().string();
+        pack.name = packArchive.filename().string();
     } else {
         pack.name = sourceDir.filename().string();
     }
@@ -330,11 +673,16 @@ ShaderPack ShaderPackManager::loadPack(
         pack.metadata.name = pack.name;
     }
 
+    // Si existen subpacks, seleccionar por defecto el primer subpack declarado por el autor
+    if (!pack.subpacks.empty()) {
+        pack.activeSubpack = pack.subpacks.front().folderName;
+    }
+
     // Propiedades y perfiles
     pack.profiles   = ShaderPackParser::parseProfiles(sourceDir / "shaders.properties");
     pack.parameters = ShaderPackParser::parseProperties(sourceDir / "shaders.properties");
 
-    // Cargar ajustes guardados del usuario (.txt)
+    // Cargar y validar ajustes guardados del usuario (.txt) incluyendo subpack activo
     ShaderPackParser::loadSettings(pack, settingsPath);
 
     // Búsqueda de materiales precompilados
@@ -352,41 +700,9 @@ ShaderPack ShaderPackManager::loadPack(
         if (!pack.prebuiltDir.empty()) break;
     }
 
-    // Copiar materiales precompilados al directorio binsDir (compiled/)
+    // Sincronizar materiales precompilados al directorio binsDir (compiled/)
     if (!ShaderPackParser::hasMaterialBin(pack.binsDir)) {
-        std::error_code ec;
-        std::vector<std::filesystem::path> dirs;
-        auto addDir = [&](std::filesystem::path const& d) {
-            std::error_code e;
-            if (!std::filesystem::is_directory(d, e) || !ShaderPackParser::hasMaterialBin(d)) return;
-            if (std::find(dirs.begin(), dirs.end(), d) != dirs.end()) return;
-            dirs.push_back(d);
-        };
-
-        if (!pack.prebuiltDir.empty()) addDir(pack.prebuiltDir);
-        for (auto const& root : prebuiltRoots) {
-            for (auto const& d : ShaderPackParser::collectPrebuiltDirs(root)) {
-                addDir(d);
-            }
-        }
-
-        if (!dirs.empty()) {
-            std::filesystem::create_directories(pack.binsDir, ec);
-            for (auto const& dir : dirs) {
-                for (auto const& e : std::filesystem::directory_iterator(dir, ec)) {
-                    if (!e.is_regular_file(ec)) continue;
-                    auto filename = e.path().filename().string();
-                    if (filename.ends_with(".material.bin")) {
-                        std::filesystem::copy_file(
-                            e.path(),
-                            pack.binsDir / filename,
-                            std::filesystem::copy_options::overwrite_existing,
-                            ec
-                        );
-                    }
-                }
-            }
-        }
+        copyMaterialsToBins(pack);
     }
 
     // Detección de render mode (Forward vs Deferred)

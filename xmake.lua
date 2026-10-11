@@ -18,6 +18,7 @@ includes("packages/levilamina-client-sdk.lua")
 add_requires("levilamina-client-sdk 26.51.5", {configs = {shared = true}})
 add_requires("levibuildscript")
 add_requires("nlohmann_json v3.12.0")
+add_requires("miniz 3.1.1")
 
 if not has_config("vs_runtime") then
     set_runtimes("MD")
@@ -48,7 +49,7 @@ target("Aeris")
         )
     end
 
-    add_packages("levilamina-client-sdk", "nlohmann_json")
+    add_packages("levilamina-client-sdk", "nlohmann_json", "miniz")
     set_kind("shared")
     set_languages("c++20")
     set_symbols("debug")
@@ -89,7 +90,7 @@ target("AerisTests")
         add_cxflags("/utf-8", "/W4")
     end
 
-    add_packages("nlohmann_json")
+    add_packages("nlohmann_json", "miniz")
     add_includedirs("src", "tests")
     add_headerfiles("tests/**.h", "src/**.h")
     add_files("tests/**.cpp")

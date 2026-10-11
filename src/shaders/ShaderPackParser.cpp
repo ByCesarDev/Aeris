@@ -2,162 +2,207 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdlib>
 #include <fstream>
 #include <map>
 #include <sstream>
-#include <system_error>
-#include <nlohmann/json.hpp>
+
+#include "nlohmann/json.hpp"
 
 namespace aeris {
 
 namespace {
 
-std::string_view trimView(std::string_view s) {
-    std::size_t a = s.find_first_not_of(" \t\r\n");
-    if (a == std::string_view::npos) return {};
-    std::size_t b = s.find_last_not_of(" \t\r\n");
-    return s.substr(a, b - a + 1);
+std::string trim(std::string_view sv) {
+    auto start = sv.find_first_not_of(" \t\r\n");
+    if (start == std::string_view::npos) return "";
+    auto end = sv.find_last_not_of(" \t\r\n");
+    return std::string(sv.substr(start, end - start + 1));
 }
 
-std::string trim(std::string_view s) {
-    return std::string(trimView(s));
+std::string_view trimView(std::string_view sv) {
+    auto start = sv.find_first_not_of(" \t\r\n");
+    if (start == std::string_view::npos) return "";
+    auto end = sv.find_last_not_of(" \t\r\n");
+    return sv.substr(start, end - start + 1);
 }
 
-std::string toLower(std::string s) {
-    std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) {
-        return static_cast<char>(std::tolower(c));
-    });
+std::string toLower(std::string_view sv) {
+    std::string s;
+    s.reserve(sv.size());
+    for (char c : sv) {
+        s.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+    }
     return s;
 }
 
-std::vector<std::string> splitTokens(std::string_view s) {
-    std::vector<std::string> out;
-    std::string              current;
-    for (char c : s) {
-        if (c == ' ' || c == '\t' || c == ',' || c == '\r' || c == '\n') {
-            if (!current.empty()) {
-                out.push_back(current);
-                current.clear();
-            }
-        } else {
-            current.push_back(c);
+std::vector<std::string> splitTokens(std::string_view line) {
+    std::vector<std::string> tokens;
+    size_t start = 0;
+    while (start < line.size()) {
+        start = line.find_first_not_of(" \t\r\n", start);
+        if (start == std::string_view::npos) break;
+        size_t end = line.find_first_of(" \t\r\n", start);
+        if (end == std::string_view::npos) {
+            tokens.emplace_back(line.substr(start));
+            break;
         }
+        tokens.emplace_back(line.substr(start, end - start));
+        start = end;
     }
-    if (!current.empty()) out.push_back(current);
-    return out;
+    return tokens;
 }
 
-bool isInteger(std::string_view s) {
-    if (s.empty()) return false;
-    std::size_t i = (s[0] == '-' || s[0] == '+') ? 1 : 0;
-    if (i >= s.size()) return false;
-    for (; i < s.size(); ++i) {
-        if (!std::isdigit(static_cast<unsigned char>(s[i]))) return false;
-    }
-    return true;
-}
-
-bool parseDouble(std::string_view s, double& out) {
-    std::string tmp(trimView(s));
-    if (tmp.empty()) return false;
-    char* end = nullptr;
-    out       = std::strtod(tmp.c_str(), &end);
-    return end != tmp.c_str() && *end == '\0';
-}
-
-bool isNumber(std::string_view s) {
-    double dummy = 0.0;
-    return parseDouble(s, dummy);
-}
-
-bool isBoolWord(std::string const& s) {
-    std::string v = toLower(s);
-    return v == "on" || v == "off" || v == "true" || v == "false" || v == "yes" || v == "no"
-        || v == "1" || v == "0";
-}
-
-void configureParameterFromTokens(ShaderParameter& p, std::vector<std::string> const& tokens) {
-    p.type = ParameterType::Bool;
-
+void configureParameterFromTokens(ShaderParameter& param, std::vector<std::string> const& tokens) {
     if (tokens.empty()) {
-        p.current      = "OFF";
-        p.defaultValue = "OFF";
+        param.type         = ParameterType::Bool;
+        param.defaultValue = "OFF";
+        param.current      = "OFF";
         return;
     }
 
-    bool allBool = std::all_of(tokens.begin(), tokens.end(), isBoolWord);
-    bool allNum  = std::all_of(tokens.begin(), tokens.end(), isNumber);
-
-    if (allBool) {
-        p.type         = ParameterType::Bool;
-        p.current      = tokens.front();
-        p.defaultValue = tokens.front();
-        return;
-    }
-
-    if (allNum && (tokens.size() == 2 || tokens.size() == 3)) {
-        p.type = ParameterType::Slider;
-        parseDouble(tokens[0], p.minVal);
-        parseDouble(tokens[1], p.maxVal);
-        if (tokens.size() == 3) {
-            p.defaultValue = tokens[2];
-            p.current      = tokens[2];
-        } else {
-            p.defaultValue = tokens[0];
-            p.current      = tokens[0];
+    if (tokens.size() == 1) {
+        auto val = tokens[0];
+        auto low = toLower(val);
+        if (low == "true" || low == "on" || low == "1") {
+            param.type         = ParameterType::Bool;
+            param.defaultValue = "ON";
+            param.current      = "ON";
+            return;
         }
-        p.isInteger = isInteger(tokens[0]) && isInteger(tokens[1]);
-        p.span      = ParameterSpan::Full; // Sliders usan ancho completo
+        if (low == "false" || low == "off" || low == "0") {
+            param.type         = ParameterType::Bool;
+            param.defaultValue = "OFF";
+            param.current      = "OFF";
+            return;
+        }
+    }
+
+    // Comprobar formato slider numérico: <default> <min> <max> [step]
+    bool allNumeric = true;
+    for (auto const& t : tokens) {
+        char* end = nullptr;
+        std::strtod(t.c_str(), &end);
+        if (end == t.c_str() || *end != '\0') {
+            allNumeric = false;
+            break;
+        }
+    }
+
+    if (allNumeric && tokens.size() >= 3) {
+        param.type         = ParameterType::Slider;
+        param.minVal       = std::strtod(tokens[0].c_str(), nullptr);
+        param.maxVal       = std::strtod(tokens[1].c_str(), nullptr);
+        param.defaultValue = tokens[2];
+        param.current      = tokens[2];
+
+        if (tokens.size() >= 4) {
+            param.stepVal = std::strtod(tokens[3].c_str(), nullptr);
+        } else {
+            param.stepVal = 1.0;
+        }
+
+        bool hasDot = false;
+        for (auto const& t : tokens) {
+            if (t.find('.') != std::string::npos) {
+                hasDot = true;
+                break;
+            }
+        }
+        param.isInteger = !hasDot;
         return;
     }
 
-    // Enumeración
-    p.type = ParameterType::Enum;
-    p.options.clear();
-    for (auto const& token : tokens) {
-        p.options.push_back({token, token});
+    // Enumeración estándar
+    param.type         = ParameterType::Enum;
+    param.defaultValue = tokens.front();
+    param.current      = tokens.front();
+    param.options.clear();
+    for (auto const& t : tokens) {
+        param.options.push_back({t, t});
     }
-    p.current      = tokens.front();
-    p.defaultValue = tokens.front();
 }
 
-std::string subpackNameOf(std::filesystem::path const& p) {
-    auto s   = p.generic_string();
-    auto key = std::string("/subpacks/");
-    auto pos = s.find(key);
+std::string subpackNameOf(std::filesystem::path const& path) {
+    auto str = path.generic_string();
+    auto pos = str.find("subpacks/");
     if (pos == std::string::npos) return {};
-    auto rest  = s.substr(pos + key.size());
-    auto slash = rest.find('/');
-    return slash == std::string::npos ? rest : rest.substr(0, slash);
+
+    pos += 9;
+    auto nextSlash = str.find('/', pos);
+    if (nextSlash == std::string::npos) {
+        return str.substr(pos);
+    }
+    return str.substr(pos, nextSlash - pos);
 }
 
 } // namespace
 
-bool ShaderPackParser::hasMaterialBin(std::filesystem::path const& dir) {
-    std::error_code ec;
-    if (!std::filesystem::is_directory(dir, ec)) return false;
-    for (auto const& e : std::filesystem::directory_iterator(dir, ec)) {
-        if (e.is_regular_file(ec) && e.path().filename().string().ends_with(".material.bin")) {
+bool ShaderPackParser::validateParameterValue(
+    ShaderParameter const& param,
+    std::string_view value,
+    std::string& outNormalized
+) {
+    auto trimmed = trim(value);
+    if (trimmed.empty()) return false;
+
+    switch (param.type) {
+    case ParameterType::Bool: {
+        auto lower = toLower(trimmed);
+        if (lower == "on" || lower == "true" || lower == "1") {
+            outNormalized = "ON";
             return true;
         }
+        if (lower == "off" || lower == "false" || lower == "0") {
+            outNormalized = "OFF";
+            return true;
+        }
+        return false;
+    }
+    case ParameterType::Slider: {
+        char* endPtr = nullptr;
+        double val = std::strtod(trimmed.c_str(), &endPtr);
+        if (endPtr == trimmed.c_str() || *endPtr != '\0') {
+            return false;
+        }
+        if (std::isnan(val) || std::isinf(val)) {
+            return false;
+        }
+        if (val < param.minVal || val > param.maxVal) {
+            return false;
+        }
+        if (param.isInteger) {
+            if (std::floor(val) != val) return false;
+            outNormalized = std::to_string(static_cast<long long>(val));
+        } else {
+            outNormalized = trimmed;
+        }
+        return true;
+    }
+    case ParameterType::Enum: {
+        for (auto const& opt : param.options) {
+            if (opt.value == trimmed) {
+                outNormalized = opt.value;
+                return true;
+            }
+        }
+        return false;
+    }
+    case ParameterType::Color: {
+        if (trimmed.size() != 7 || trimmed[0] != '#') return false;
+        for (size_t i = 1; i < 7; ++i) {
+            char c = trimmed[i];
+            if (!std::isxdigit(static_cast<unsigned char>(c))) return false;
+        }
+        outNormalized = trimmed;
+        return true;
+    }
+    case ParameterType::Category:
+        outNormalized = trimmed;
+        return true;
     }
     return false;
-}
-
-ShaderRenderMode ShaderPackParser::detectRenderMode(std::filesystem::path const& binsDir) {
-    std::error_code ec;
-    if (!std::filesystem::is_directory(binsDir, ec)) return ShaderRenderMode::Forward;
-
-    for (auto const& entry : std::filesystem::directory_iterator(binsDir, ec)) {
-        if (!entry.is_regular_file(ec)) continue;
-        auto name = toLower(entry.path().filename().string());
-        if (!name.ends_with(".material.bin")) continue;
-        if (name.find("deferred") != std::string::npos) {
-            return ShaderRenderMode::Deferred;
-        }
-    }
-    return ShaderRenderMode::Forward;
 }
 
 std::string ShaderPackParser::parsePrebuiltDirective(std::filesystem::path const& propertiesFile) {
@@ -228,7 +273,7 @@ std::vector<ShaderParameter> ShaderPackParser::parseProperties(std::filesystem::
         auto value = trim(trimmed.substr(eqPos + 1));
 
         if (key.starts_with("option.")) {
-            auto paramName = key.substr(7); // Quitar "option."
+            auto paramName = key.substr(7);
             if (paramName.empty()) continue;
 
             auto tokens = splitTokens(value);
@@ -241,7 +286,6 @@ std::vector<ShaderParameter> ShaderPackParser::parseProperties(std::filesystem::
             nameIndexMap[paramName] = params.size();
             params.push_back(std::move(param));
         } else if (key.starts_with("screen.")) {
-            // Jerarquía de pantallas: screen.MAIN.CATEGORY = ITEM1 ITEM2
             auto screenPath = key.substr(7);
             auto tokens     = splitTokens(value);
 
@@ -252,7 +296,6 @@ std::vector<ShaderParameter> ShaderPackParser::parseProperties(std::filesystem::
             screenParam.childNames   = tokens;
             params.push_back(std::move(screenParam));
         } else if (key == "sliders") {
-            // Sintaxis legacy: sliders = NAME1 NAME2
             auto tokens = splitTokens(value);
             for (auto const& name : tokens) {
                 if (nameIndexMap.find(name) == nameIndexMap.end()) {
@@ -283,7 +326,7 @@ ShaderPackMetadata ShaderPackParser::parseMetadata(
 
     std::error_code ec;
 
-    // 1. Intentar leer manifest.json (estándar Bedrock Resource Pack)
+    // 1. Leer manifest.json respetando el orden explícito del autor
     auto manifestPath = packDir / "manifest.json";
     if (std::filesystem::is_regular_file(manifestPath, ec)) {
         std::ifstream file(manifestPath);
@@ -311,7 +354,6 @@ ShaderPackMetadata ShaderPackParser::parseMetadata(
                     }
                 }
 
-                // Subpacks
                 if (j.contains("subpacks") && j["subpacks"].is_array()) {
                     for (auto const& sub : j["subpacks"]) {
                         if (sub.contains("folder_name") && sub.contains("name")) {
@@ -337,9 +379,6 @@ ShaderPackMetadata ShaderPackParser::parseMetadata(
                 outSubpacks.push_back(std::move(v));
             }
         }
-        std::sort(outSubpacks.begin(), outSubpacks.end(), [](auto const& a, auto const& b) {
-            return a.folderName < b.folderName;
-        });
     }
 
     return meta;
@@ -349,54 +388,61 @@ std::filesystem::path ShaderPackParser::findPrebuiltMaterials(std::filesystem::p
     std::error_code ec;
     if (!std::filesystem::is_directory(root, ec)) return {};
 
-    // 0. Si la raíz del paquete contiene directamente *.material.bin
-    if (hasMaterialBin(root)) return root;
-
-    // 1. Verificar si hay directiva explícita en shaders.properties
-    auto directive = parsePrebuiltDirective(root / "shaders.properties");
-    if (!directive.empty()) {
-        auto candidate = root / directive;
-        if (hasMaterialBin(candidate)) return candidate;
+    if (hasMaterialBin(root)) {
+        return root;
     }
 
-    // 2. Ubicaciones comunes de paquetes empaquetados
-    constexpr std::string_view commonLocations[] = {
-        "renderer/materials",
-        "pack/renderer/materials",
-        "renderer",
-        "dist",
-        "output"
-    };
-    for (auto loc : commonLocations) {
-        auto candidate = root / loc;
-        if (hasMaterialBin(candidate)) return candidate;
+    auto candidate = root / "renderer" / "materials";
+    if (hasMaterialBin(candidate)) return candidate;
+
+    candidate = root / "materials";
+    if (hasMaterialBin(candidate)) return candidate;
+
+    std::vector<std::filesystem::path> found;
+    std::filesystem::recursive_directory_iterator it(root, ec);
+    std::filesystem::recursive_directory_iterator end;
+
+    for (; it != end; it.increment(ec)) {
+        if (ec) break;
+        if (!it->is_directory(ec)) continue;
+
+        auto name = it->path().filename().string();
+        if (!name.empty() && (name[0] == '.' || name[0] == '_')) {
+            it.disable_recursion_pending();
+            continue;
+        }
+
+        if (hasMaterialBin(it->path())) {
+            found.push_back(it->path());
+            it.disable_recursion_pending();
+        }
     }
 
-    // 3. Búsqueda recursiva poco profunda
-    auto dirs = collectPrebuiltDirs(root);
-    if (!dirs.empty()) {
-        return dirs.front();
-    }
+    if (found.empty()) return {};
 
-    return {};
+    for (auto const& p : found) {
+        if (p.generic_string().find("subpacks") != std::string::npos) {
+            return p;
+        }
+    }
+    return found.front();
 }
 
-std::vector<std::filesystem::path> ShaderPackParser::collectPrebuiltDirs(std::filesystem::path const& root) {
+std::vector<std::filesystem::path> ShaderPackParser::collectPrebuiltDirs(
+    std::filesystem::path const& root,
+    std::string_view activeSubpack
+) {
     std::vector<std::filesystem::path> base;
     std::map<std::string, std::vector<std::filesystem::path>> subpacks;
 
     std::error_code ec;
-    if (!std::filesystem::is_directory(root, ec)) return {};
+    if (!std::filesystem::is_directory(root, ec)) return base;
 
     if (hasMaterialBin(root)) {
         base.push_back(root);
     }
 
-    std::filesystem::recursive_directory_iterator it(
-        root,
-        std::filesystem::directory_options::skip_permission_denied,
-        ec
-    );
+    std::filesystem::recursive_directory_iterator it(root, ec);
     std::filesystem::recursive_directory_iterator end;
 
     for (; it != end; it.increment(ec)) {
@@ -420,16 +466,53 @@ std::vector<std::filesystem::path> ShaderPackParser::collectPrebuiltDirs(std::fi
         it.disable_recursion_pending();
     }
 
-    std::sort(base.begin(), base.end());
     std::vector<std::filesystem::path> out = base;
 
-    // Si existen subpacks, elegir la variante alfabéticamente superior (ej: novc < vc)
     if (!subpacks.empty()) {
-        auto const& [name, dirs] = *subpacks.rbegin();
-        out.insert(out.end(), dirs.begin(), dirs.end());
+        if (!activeSubpack.empty()) {
+            auto itSub = subpacks.find(std::string(activeSubpack));
+            if (itSub != subpacks.end()) {
+                out.insert(out.end(), itSub->second.begin(), itSub->second.end());
+            } else {
+                // Fallback al primer subpack
+                out.insert(out.end(), subpacks.begin()->second.begin(), subpacks.begin()->second.end());
+            }
+        } else {
+            // Sin selección explícita: seleccionar el primero por orden natural, no rbegin()
+            out.insert(out.end(), subpacks.begin()->second.begin(), subpacks.begin()->second.end());
+        }
     }
 
     return out;
+}
+
+ShaderRenderMode ShaderPackParser::detectRenderMode(std::filesystem::path const& binsDir) {
+    std::error_code ec;
+    if (!std::filesystem::is_directory(binsDir, ec)) {
+        return ShaderRenderMode::Forward;
+    }
+
+    for (auto const& entry : std::filesystem::directory_iterator(binsDir, ec)) {
+        if (!entry.is_regular_file(ec)) continue;
+        auto filename = entry.path().filename().string();
+        if (filename.find("Deferred") != std::string::npos && filename.ends_with(".material.bin")) {
+            return ShaderRenderMode::Deferred;
+        }
+    }
+    return ShaderRenderMode::Forward;
+}
+
+bool ShaderPackParser::hasMaterialBin(std::filesystem::path const& dir) {
+    std::error_code ec;
+    if (!std::filesystem::is_directory(dir, ec)) return false;
+
+    for (auto const& entry : std::filesystem::directory_iterator(dir, ec)) {
+        if (!entry.is_regular_file(ec)) continue;
+        if (entry.path().filename().string().ends_with(".material.bin")) {
+            return true;
+        }
+    }
+    return false;
 }
 
 bool ShaderPackParser::loadSettings(ShaderPack& pack, std::filesystem::path const& settingsFile) {
@@ -453,10 +536,25 @@ bool ShaderPackParser::loadSettings(ShaderPack& pack, std::filesystem::path cons
         savedMap[key] = value;
     }
 
+    // Cargar subpack activo si fue guardado
+    auto subpackIt = savedMap.find("subpack");
+    if (subpackIt != savedMap.end() && !subpackIt->second.empty()) {
+        for (auto const& s : pack.subpacks) {
+            if (s.folderName == subpackIt->second) {
+                pack.activeSubpack = subpackIt->second;
+                break;
+            }
+        }
+    }
+
+    // Cargar y validar parámetros individuales
     for (auto& param : pack.parameters) {
         auto it = savedMap.find(param.name);
         if (it != savedMap.end()) {
-            param.current = it->second;
+            std::string normalized;
+            if (validateParameterValue(param, it->second, normalized)) {
+                param.current = std::move(normalized);
+            }
         }
     }
     return true;
@@ -470,6 +568,9 @@ bool ShaderPackParser::saveSettings(ShaderPack const& pack, std::filesystem::pat
     if (!file.is_open()) return false;
 
     file << "# Aeris Shader Settings for " << pack.name << "\n";
+    if (!pack.activeSubpack.empty()) {
+        file << "subpack = " << pack.activeSubpack << "\n";
+    }
     for (auto const& param : pack.parameters) {
         if (param.type != ParameterType::Category) {
             file << param.name << " = " << param.current << "\n";
