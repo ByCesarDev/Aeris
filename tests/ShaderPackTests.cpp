@@ -507,6 +507,44 @@ void runShaderPackTests() {
             "collectPrebuiltDirs with explicit 'novc' must pick 'novc'");
     }
 
+    // Subpacks declarados como carpetas directas en la raíz (ej: high/ y low/ sin prefijo subpacks/)
+    auto directSubRoot = tempDir / "direct_subpacks";
+    std::filesystem::create_directories(directSubRoot);
+    {
+        std::ofstream mf(directSubRoot / "manifest.json");
+        mf << "{\n"
+           << "  \"header\": { \"name\": \"Direct Subpack Test\" },\n"
+           << "  \"subpacks\": [\n"
+           << "    { \"folder_name\": \"high\", \"name\": \"High Quality\" },\n"
+           << "    { \"folder_name\": \"low\", \"name\": \"Low Quality\" }\n"
+           << "  ]\n"
+           << "}\n";
+    }
+    auto directHigh = directSubRoot / "high";
+    auto directLow  = directSubRoot / "low";
+    std::filesystem::create_directories(directHigh);
+    std::filesystem::create_directories(directLow);
+    {
+        std::ofstream f1(directHigh / "UIBlit.material.bin");
+        f1 << "high_uiblit";
+        std::ofstream f2(directLow / "UIBlit.material.bin");
+        f2 << "low_uiblit";
+    }
+
+    auto directHighCollected = aeris::ShaderPackParser::collectPrebuiltDirs(directSubRoot, "high");
+    check(!directHighCollected.empty(), "collectPrebuiltDirs must locate direct high subpack");
+    if (!directHighCollected.empty()) {
+        check(directHighCollected.front().filename().string() == "high",
+            "Direct declared 'high' subpack must be selected when requested");
+    }
+
+    auto directLowCollected = aeris::ShaderPackParser::collectPrebuiltDirs(directSubRoot, "low");
+    check(!directLowCollected.empty(), "collectPrebuiltDirs must locate direct low subpack");
+    if (!directLowCollected.empty()) {
+        check(directLowCollected.front().filename().string() == "low",
+            "Direct declared 'low' subpack must be selected when requested");
+    }
+
     // =========================================================================
     // 12. Regresión: saveSettings atómico y unicidad de sufijos temporales
     // =========================================================================

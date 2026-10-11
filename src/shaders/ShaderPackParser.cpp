@@ -461,38 +461,7 @@ std::vector<std::filesystem::path> ShaderPackParser::collectPrebuiltDirs(
     std::error_code ec;
     if (!std::filesystem::is_directory(root, ec)) return base;
 
-    if (hasMaterialBin(root)) {
-        base.push_back(root);
-    }
-
-    std::filesystem::recursive_directory_iterator it(root, ec);
-    std::filesystem::recursive_directory_iterator end;
-
-    for (; it != end; it.increment(ec)) {
-        if (ec) break;
-        if (!it->is_directory(ec)) continue;
-
-        auto name = it->path().filename().string();
-        if ((!name.empty() && (name[0] == '.' || name[0] == '_')) || name == "vanilla") {
-            it.disable_recursion_pending();
-            continue;
-        }
-
-        if (!hasMaterialBin(it->path())) continue;
-
-        auto sub = subpackNameOf(it->path());
-        if (sub.empty()) {
-            base.push_back(it->path());
-        } else {
-            if (subpackMap.find(sub) == subpackMap.end()) {
-                subpackOrder.push_back(sub);
-            }
-            subpackMap[sub].push_back(it->path());
-        }
-        it.disable_recursion_pending();
-    }
-
-    // Consultar manifest.json para obtener el orden exacto declarado por el autor
+    // 1. Consultar manifest.json para obtener orden y nombres de subpacks declarados
     std::vector<std::string> authorDeclaredSubpacks;
     auto manifestPath = root / "manifest.json";
     if (!std::filesystem::is_regular_file(manifestPath, ec) && root.has_parent_path()) {
@@ -513,6 +482,48 @@ std::vector<std::filesystem::path> ShaderPackParser::collectPrebuiltDirs(
                 }
             } catch (...) {}
         }
+    }
+
+    if (hasMaterialBin(root)) {
+        base.push_back(root);
+    }
+
+    std::filesystem::recursive_directory_iterator it(root, ec);
+    std::filesystem::recursive_directory_iterator end;
+
+    for (; it != end; it.increment(ec)) {
+        if (ec) break;
+        if (!it->is_directory(ec)) continue;
+
+        auto name = it->path().filename().string();
+        if ((!name.empty() && (name[0] == '.' || name[0] == '_')) || name == "vanilla") {
+            it.disable_recursion_pending();
+            continue;
+        }
+
+        if (!hasMaterialBin(it->path())) continue;
+
+        // Detectar subpack: primero por subpacks/<nombre>, o si coincide con folder_name de manifest
+        auto sub = subpackNameOf(it->path());
+        if (sub.empty()) {
+            auto rel = it->path().lexically_relative(root).generic_string();
+            for (auto const& declSub : authorDeclaredSubpacks) {
+                if (rel == declSub || rel.starts_with(declSub + "/")) {
+                    sub = declSub;
+                    break;
+                }
+            }
+        }
+
+        if (sub.empty()) {
+            base.push_back(it->path());
+        } else {
+            if (subpackMap.find(sub) == subpackMap.end()) {
+                subpackOrder.push_back(sub);
+            }
+            subpackMap[sub].push_back(it->path());
+        }
+        it.disable_recursion_pending();
     }
 
     std::vector<std::filesystem::path> out = base;
