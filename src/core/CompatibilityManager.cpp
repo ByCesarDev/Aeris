@@ -44,6 +44,7 @@ CompatibilityManager& CompatibilityManager::getInstance() {
 
 void CompatibilityManager::reset() {
     mDetectedVersion         = "Unknown";
+    mRawDetectedVersion      = "Unknown";
     mDetectedLoaderVersion   = "Unknown";
     mVersionCompatible       = false;
 
@@ -109,7 +110,7 @@ bool CompatibilityManager::isVersionMatching(std::string_view version, std::stri
     if (version == target) {
         return true;
     }
-    // Tolerar variaciones comunes de nombrado de Bedrock para la misma versión (ej: 1.26.51.1 vs 1.26.51.01)
+    // Tolerar variaciones comunes de nombrado de Bedrock para la misma versión (ej: 1.26.51.1 vs 1.26.51.01 o build hash 1.26.51+...)
     if (version.starts_with("1.26.51") || version.starts_with("26.51")) {
         return true;
     }
@@ -121,9 +122,9 @@ void CompatibilityManager::initialize() {
 
 #if __has_include("ll/api/Versions.h")
     try {
-        mDetectedVersion = ll::getGameVersion().to_string();
+        mRawDetectedVersion = ll::getGameVersion().to_string();
     } catch (...) {
-        mDetectedVersion = "Unknown";
+        mRawDetectedVersion = "Unknown";
     }
 
     try {
@@ -133,14 +134,21 @@ void CompatibilityManager::initialize() {
     }
 #endif
 
-    initialize(mDetectedVersion, mDetectedLoaderVersion);
+    initialize(mRawDetectedVersion, mDetectedLoaderVersion);
 }
 
 void CompatibilityManager::initialize(std::string gameVersion, std::string loaderVersion) {
-    mDetectedVersion       = std::move(gameVersion);
+    mRawDetectedVersion    = std::move(gameVersion);
     mDetectedLoaderVersion = std::move(loaderVersion);
 
-    mVersionCompatible = isVersionMatching(mDetectedVersion, targetVersion());
+    // Normalizar a la versión canónica de distribución si es la serie 1.26.51
+    if (mRawDetectedVersion.starts_with("1.26.51")) {
+        mDetectedVersion = "1.26.51.01";
+    } else {
+        mDetectedVersion = mRawDetectedVersion;
+    }
+
+    mVersionCompatible = isVersionMatching(mRawDetectedVersion, targetVersion());
 
     if (!mVersionCompatible) {
         std::string reason = "Target version mismatch (detected: " + mDetectedVersion + ", required: " + std::string(targetVersion()) + ")";

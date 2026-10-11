@@ -14,6 +14,7 @@
 #endif
 
 #include "core/CompatibilityManager.h"
+#include "core/ConfigManager.h"
 #include "shaders/MaterialLoader.h"
 
 namespace aeris {
@@ -180,7 +181,25 @@ bool MaterialHooks::install() {
     }
     auto& logger = mod->getLogger();
 
-    // 1. Verificar compatibilidad general de versión antes de tocar memoria
+    // 1. MODO SEGURO: Ganchos experimentales desactivados por defecto
+    auto const& safety = ConfigManager::getInstance().config().safety;
+    if (safety.safeMode || !safety.enableExperimentalHooks) {
+        mLastError = "RenderDragon native hooks disabled (safe mode active)";
+        logger.info("MaterialHooks: {}. Memory untouched.", mLastError);
+        CompatibilityManager::getInstance().setCapabilityState(
+            FeatureCapability::MaterialRedirection,
+            CapabilityState::Unknown,
+            "Safe mode: native hooks disabled by default"
+        );
+        CompatibilityManager::getInstance().setCapabilityState(
+            FeatureCapability::MaterialHotReload,
+            CapabilityState::Unknown,
+            "Safe mode: native hooks disabled by default"
+        );
+        return false;
+    }
+
+    // 2. Verificar compatibilidad general de versión antes de tocar memoria
     if (!CompatibilityManager::getInstance().isVersionCompatible()) {
         mLastError = "Incompatible game version for RenderDragon hooks";
         logger.warn("MaterialHooks: {}; hooks safely aborted", mLastError);
@@ -192,7 +211,7 @@ bool MaterialHooks::install() {
         return false;
     }
 
-    // 2. Verificar reloadMaterial
+    // 3. Verificar reloadMaterial
     void* reloadTarget = resolveFirst(reloadMaterialPatterns, std::size(reloadMaterialPatterns));
     if (reloadTarget != nullptr) {
         g_reloadMaterial = reinterpret_cast<ReloadMaterialFn>(reloadTarget);
@@ -200,7 +219,7 @@ bool MaterialHooks::install() {
         logger.info("MaterialHooks: reloadMaterial signature not found in 1.26.51.01; hot reload disabled");
     }
 
-    // 3. Verificar y hookear readFile
+    // 4. Verificar y hookear readFile
     void* readFileTarget = resolveFirst(readFilePatterns, std::size(readFilePatterns));
     if (readFileTarget == nullptr) {
         mLastError = "readFile signature not verified for Minecraft 1.26.51.01";
@@ -239,7 +258,7 @@ bool MaterialHooks::install() {
         "readFile detour installed"
     );
 
-    // 4. Verificar y hookear endFrame
+    // 5. Verificar y hookear endFrame
     void* endFrameTarget = resolveFirst(endFramePatterns, std::size(endFramePatterns));
     if (endFrameTarget == nullptr) {
         logger.info("MaterialHooks: endFrame signature not found; frame-end reload trigger disabled");

@@ -43,6 +43,7 @@ void runConfigTests() {
 
     // 6. Transaccionalidad: un JSON inválido no debe alterar la configuración existente
     auto testDir = std::filesystem::temp_directory_path() / "aeris_test_config";
+    std::filesystem::remove_all(testDir);
     std::filesystem::create_directories(testDir);
     auto testFile = testDir / "bad_config.json";
 
@@ -64,6 +65,10 @@ void runConfigTests() {
     check(mgr.load(goodFile), "Reload good config must succeed");
     check(mgr.config().language == "en_US", "Loaded config must match saved values");
     check(mgr.config().ui.shortcut == "H", "Loaded shortcut must match saved shortcut");
+
+    // 8. Modo seguro y ganchos experimentales desactivados por defecto
+    check(mgr.config().safety.safeMode == true, "Safe mode must be enabled by default");
+    check(mgr.config().safety.enableExperimentalHooks == false, "Experimental hooks must be disabled by default");
 
     std::filesystem::remove_all(testDir);
 }

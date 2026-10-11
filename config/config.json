@@ -18,6 +18,7 @@
         "diagnosticsEnabled": true
     },
     "safety": {
-        "safeMode": false
+        "safeMode": true,
+        "enableExperimentalHooks": false
     }
 }

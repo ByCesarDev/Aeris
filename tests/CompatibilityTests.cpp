@@ -64,5 +64,11 @@ void runCompatibilityTests() {
     check(aeris::capabilityStateToString(aeris::CapabilityState::Unsupported) == "Unsupported", "Unsupported string check");
     check(aeris::capabilityStateToString(aeris::CapabilityState::Unknown) == "Unknown", "Unknown string check");
 
+        // 7. Normalizacion de versiones con sufijo git/build (1.26.51+0559ac5)
+    mgr.initialize("1.26.51+0559ac5", "26.51.5");
+    check(mgr.isVersionCompatible(), "Version 1.26.51+0559ac5 must be recognized as compatible");
+    check(mgr.detectedVersion() == "1.26.51.01", "1.26.51+0559ac5 must normalize to 1.26.51.01");
+    check(mgr.rawDetectedVersion() == "1.26.51+0559ac5", "rawDetectedVersion must retain exact engine build");
+
     mgr.reset();
 }

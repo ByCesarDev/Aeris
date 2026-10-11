@@ -30,7 +30,8 @@ struct Config {
     } performance;
 
     struct SafetyConfig {
-        bool safeMode = false;
+        bool safeMode                = true;  // Safe mode on by default
+        bool enableExperimentalHooks = false; // Native hooks disabled by default until verified
     } safety;
 };
 
@@ -58,11 +59,11 @@ public:
     void reset();
 
 private:
-    ConfigManager() = default;
+    ConfigManager();
 
-    Config                mConfig;
+    mutable Config        mConfig;
     std::filesystem::path mConfigPath;
-    std::string           mLastError;
+    mutable std::string   mLastError;
 };
 
 } // namespace aeris

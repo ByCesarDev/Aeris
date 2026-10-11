@@ -47,6 +47,7 @@ public:
     void                          setCapabilityState(FeatureCapability cap, CapabilityState state, std::string reason = "");
 
     [[nodiscard]] std::string const& detectedVersion() const { return mDetectedVersion; }
+    [[nodiscard]] std::string const& rawDetectedVersion() const { return mRawDetectedVersion; }
     [[nodiscard]] std::string const& detectedLoaderVersion() const { return mDetectedLoaderVersion; }
     [[nodiscard]] std::string_view   targetVersion() const { return "1.26.51.01"; }
 
@@ -66,7 +67,7 @@ public:
         );
     }
 
-    // Comprueba si una cadena de versión coincide con la versión objetivo (1.26.51.01 o prefijo 1.26.51)
+    // Comprueba si una cadena de versión coincide con la versión objetivo (1.26.51.01, prefijo 1.26.51 o hash de build)
     static bool isVersionMatching(std::string_view version, std::string_view target = "1.26.51.01");
 
     void reset();
@@ -80,6 +81,7 @@ private:
     };
 
     std::string    mDetectedVersion       = "Unknown";
+    std::string    mRawDetectedVersion    = "Unknown";
     std::string    mDetectedLoaderVersion = "Unknown";
     bool           mVersionCompatible     = false;
     CapabilityInfo mMaterialRedirection;

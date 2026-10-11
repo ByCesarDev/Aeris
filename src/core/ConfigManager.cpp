@@ -2,35 +2,48 @@
 
 #include <chrono>
 #include <fstream>
+#include <process.h>
+#include <sstream>
 #include <system_error>
-#include <thread>
 #include <nlohmann/json.hpp>
 
 #ifdef _WIN32
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
-#include <Windows.h>
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
 #endif
 
 namespace aeris {
 
 namespace {
 
-bool isSafeRelativePath(std::string_view path) {
-    if (path.empty()) return false;
-    // No permitir secuencias de escape a directorios superiores
-    if (path.find("..") != std::string_view::npos) return false;
-    // No permitir rutas absolutas (con /, \, o unidad C:)
-    if (path.front() == '/' || path.front() == '\\') return false;
-    if (path.size() >= 2 && path[1] == ':') return false;
+bool isSafeRelativePath(std::string_view p) {
+    if (p.empty()) return false;
+    if (p.starts_with('/') || p.starts_with('\\')) return false;
+    if (p.size() >= 2 && p[1] == ':') return false; // Drive letter
+    if (p.find("..") != std::string_view::npos) return false;
     return true;
 }
 
+std::string generateUniqueSuffix() {
+    static std::atomic<uint64_t> sCounter{0};
+    auto now = std::chrono::steady_clock::now().time_since_epoch().count();
+    auto pid = _getpid();
+    auto count = sCounter.fetch_add(1);
+    std::ostringstream ss;
+    ss << pid << "_" << now << "_" << count;
+    return ss.str();
+}
+
 } // namespace
+
+ConfigManager::ConfigManager() {
+    reset();
+}
 
 ConfigManager& ConfigManager::getInstance() {
     static ConfigManager instance;
@@ -38,13 +51,14 @@ ConfigManager& ConfigManager::getInstance() {
 }
 
 void ConfigManager::reset() {
-    mConfig    = Config{};
+    mConfig     = Config{};
+    mConfigPath.clear();
     mLastError.clear();
 }
 
 bool ConfigManager::validate(Config const& cfg, std::string& outError) {
     if (cfg.configVersion != 1) {
-        outError = "Unsupported config version: " + std::to_string(cfg.configVersion);
+        outError = "Unsupported configVersion: " + std::to_string(cfg.configVersion);
         return false;
     }
 
@@ -99,7 +113,7 @@ bool ConfigManager::load(std::filesystem::path const& configFile) {
 
     std::ifstream file(mConfigPath);
     if (!file.is_open()) {
-        mLastError = "Could not open config file: " + mConfigPath.string();
+        mLastError = "Failed to open config file for reading: " + mConfigPath.string();
         return false;
     }
 
@@ -107,16 +121,11 @@ bool ConfigManager::load(std::filesystem::path const& configFile) {
     try {
         file >> j;
     } catch (std::exception const& e) {
-        mLastError = std::string("Malformed JSON in config: ") + e.what();
+        mLastError = std::string("JSON parse error: ") + e.what();
         return false;
     }
 
-    if (!j.is_object()) {
-        mLastError = "Config JSON root must be an object";
-        return false;
-    }
-
-    // Cargar en objeto candidato temporal para garantizar transaccionalidad
+    // Instancia de prueba (candidato) para no modificar el estado activo hasta verificar
     Config candidate = mConfig;
 
     try {
@@ -150,6 +159,9 @@ bool ConfigManager::load(std::filesystem::path const& configFile) {
         if (j.contains("safety") && j["safety"].is_object()) {
             auto const& s = j["safety"];
             if (s.contains("safeMode")) candidate.safety.safeMode = s["safeMode"].get<bool>();
+            if (s.contains("enableExperimentalHooks")) {
+                candidate.safety.enableExperimentalHooks = s["enableExperimentalHooks"].get<bool>();
+            }
         }
     } catch (std::exception const& e) {
         mLastError = std::string("Type error reading config fields: ") + e.what();
@@ -169,64 +181,98 @@ bool ConfigManager::load(std::filesystem::path const& configFile) {
 }
 
 bool ConfigManager::save() const {
-    if (mConfigPath.empty()) return false;
+    if (mConfigPath.empty()) {
+        mLastError = "Config path is empty; cannot save";
+        return false;
+    }
+
+    std::string valError;
+    if (!validate(mConfig, valError)) {
+        mLastError = "Cannot save invalid config: " + valError;
+        return false;
+    }
 
     std::error_code ec;
-    std::filesystem::create_directories(mConfigPath.parent_path(), ec);
+    auto parent = mConfigPath.parent_path();
+    if (!parent.empty()) {
+        std::filesystem::create_directories(parent, ec);
+        if (ec) {
+            mLastError = "Failed to create directory: " + ec.message();
+            return false;
+        }
+    }
 
     nlohmann::json j;
-    j["configVersion"]   = mConfig.configVersion;
-    j["enabled"]         = mConfig.enabled;
-    j["language"]        = mConfig.language;
-    j["dataDir"]         = mConfig.dataDir;
-    j["shaderPacksDir"]  = mConfig.shaderPacksDir;
-    j["generatedDir"]    = mConfig.generatedDir;
-
+    j["configVersion"]  = mConfig.configVersion;
+    j["enabled"]        = mConfig.enabled;
+    j["language"]       = mConfig.language;
+    j["dataDir"]        = mConfig.dataDir;
+    j["shaderPacksDir"] = mConfig.shaderPacksDir;
+    j["generatedDir"]   = mConfig.generatedDir;
     j["ui"] = {
         {"shortcut", mConfig.ui.shortcut},
         {"backdrop", mConfig.ui.backdrop},
         {"theme",    mConfig.ui.theme}
     };
-
     j["shaders"] = {
         {"activePack", mConfig.shaders.activePack},
         {"hotReload",  mConfig.shaders.hotReload}
     };
-
     j["performance"] = {
         {"diagnosticsEnabled", mConfig.performance.diagnosticsEnabled}
     };
-
     j["safety"] = {
-        {"safeMode", mConfig.safety.safeMode}
+        {"safeMode",                mConfig.safety.safeMode},
+        {"enableExperimentalHooks", mConfig.safety.enableExperimentalHooks}
     };
 
-    auto tempPath = mConfigPath;
-    tempPath += ".tmp";
+    // Escritura atómica mediante archivo temporal con identificador exclusivo
+    auto suffix = generateUniqueSuffix();
+    auto tempFile = parent / (mConfigPath.filename().string() + ".tmp_" + suffix);
 
     {
-        std::ofstream file(tempPath, std::ios::out | std::ios::trunc);
-        if (!file.is_open()) return false;
-        file << j.dump(4) << '\n';
-        file.flush();
-        if (!file.good()) return false;
+        std::ofstream file(tempFile, std::ios::trunc);
+        if (!file.is_open()) {
+            mLastError = "Failed to open temporary file for writing: " + tempFile.string();
+            return false;
+        }
+
+        try {
+            file << j.dump(4);
+            file.flush();
+            if (!file.good()) {
+                mLastError = "Stream error while writing config payload";
+                file.close();
+                std::filesystem::remove(tempFile, ec);
+                return false;
+            }
+        } catch (std::exception const& e) {
+            mLastError = std::string("JSON serialization error: ") + e.what();
+            file.close();
+            std::filesystem::remove(tempFile, ec);
+            return false;
+        }
     }
 
 #ifdef _WIN32
-    // En Windows, MoveFileExW garantiza reemplazo atómico con flush a disco
-    bool replaced = false;
-    for (int attempt = 0; attempt < 10; ++attempt) {
-        if (MoveFileExW(tempPath.c_str(), mConfigPath.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
-            replaced = true;
-            break;
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    // En Windows MoveFileExW con MOVEFILE_REPLACE_EXISTING realiza sustitución atómica
+    std::wstring wTemp = tempFile.wstring();
+    std::wstring wDest = mConfigPath.wstring();
+    if (!MoveFileExW(wTemp.c_str(), wDest.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+        mLastError = "Atomic MoveFileExW failed with code " + std::to_string(GetLastError());
+        std::filesystem::remove(tempFile, ec);
+        return false;
     }
-    if (replaced) return true;
+#else
+    std::filesystem::rename(tempFile, mConfigPath, ec);
+    if (ec) {
+        mLastError = "Atomic rename failed: " + ec.message();
+        std::filesystem::remove(tempFile, ec);
+        return false;
+    }
 #endif
 
-    std::filesystem::rename(tempPath, mConfigPath, ec);
-    return !ec;
+    return true;
 }
 
 } // namespace aeris
