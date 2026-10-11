@@ -6,7 +6,11 @@ package("levilamina-client-sdk")
     set_description("LeviLamina client headers and release import library")
     set_license("LGPL-3.0")
     add_urls("https://github.com/LiteLDev/LeviLamina/archive/refs/tags/v$(version).zip")
+    add_versions("26.51.6", "aedd471f5f023d049570b2dfca5be5814c47805358a534e13b7a0e4f023b29ca")
     add_versions("26.51.5", "f1869b522e9d55cb367bbc799cc68f44e05be0e26c11bc3152525680035fa67d")
+    add_resources("26.51.6", "runtime",
+        "https://github.com/LiteLDev/LeviLamina/releases/download/v26.51.6/levilamina-v26.51.6-client-release-windows-x64.zip",
+        "584b3057fb1642c298381888212c3e46c9651733a94df62e128ff249787361a7")
     add_resources("26.51.5", "runtime",
         "https://github.com/LiteLDev/LeviLamina/releases/download/v26.51.5/levilamina-v26.51.5-client-release-windows-x64.zip",
         "c88649827a33a81ab3e154a6fdd7ee5bc38d23e78730fc34798bfa57cdca0a5c")
@@ -15,8 +19,15 @@ package("levilamina-client-sdk")
     add_deps("entt v4.0.0", "expected-lite v0.8.0", "fmt 11.2.0", "gsl v4.2.0",
         "glm 1.0.1", "leveldb 1.23", "magic_enum v0.9.7", "nlohmann_json v3.12.0",
         "rapidjson 2025.02.05", "type_safe v0.2.4", "pcg_cpp v1.0.0", "pfr 2.1.1",
-        "symbolprovider v1.3.0", "parallel-hashmap v1.3.12", "concurrentqueue v1.0.4",
-        "stb 2025.03.14", "bedrockdata v26.51.1-client.6")
+        "symbolprovider v1.3.0", "concurrentqueue v1.0.4", "stb 2025.03.14")
+
+    on_load(function(package)
+        if package:version():ge("26.51.6") then
+            package:add("deps", "parallel-hashmap v2.0.0", "bedrockdata v26.51.1-client.7")
+        else
+            package:add("deps", "parallel-hashmap v1.3.12", "bedrockdata v26.51.1-client.6")
+        end
+    end)
 
     on_fetch(function(package, opt)
         if opt.system then return false end

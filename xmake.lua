@@ -1,5 +1,5 @@
 -- Aeris — Shaders, Rendering & Performance for Minecraft Bedrock (LeviLamina Client)
--- Target: Minecraft Bedrock 1.26.51.01 (GDK Windows x64) + LeviLamina Client SDK 26.51.5
+-- Target: Minecraft Bedrock 1.26.51.01 (GDK Windows x64) + LeviLamina Client SDK 26.51.6
 
 add_rules("mode.debug", "mode.release")
 set_license("LGPL-3.0")
@@ -15,7 +15,7 @@ option("target_type")
 option_end()
 
 includes("packages/levilamina-client-sdk.lua")
-add_requires("levilamina-client-sdk 26.51.5", {configs = {shared = true}})
+add_requires("levilamina-client-sdk 26.51.6", {configs = {shared = true}})
 add_requires("levibuildscript")
 add_requires("nlohmann_json v3.12.0")
 add_requires("miniz 3.1.1")
@@ -47,6 +47,7 @@ target("Aeris")
             "-Wno-pragma-system-header-outside-header",
             {tools = {"clang_cl"}}
         )
+        set_toolchains("clang-cl")
     end
 
     add_packages("levilamina-client-sdk", "nlohmann_json", "miniz")

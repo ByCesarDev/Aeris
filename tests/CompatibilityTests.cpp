@@ -24,6 +24,7 @@ void runCompatibilityTests() {
     // 2. Coincidencia de versiones
     check(aeris::CompatibilityManager::isVersionMatching("1.26.51.01"), "Exact target 1.26.51.01 must match");
     check(aeris::CompatibilityManager::isVersionMatching("1.26.51.1"), "Prefix 1.26.51 must match");
+    check(aeris::CompatibilityManager::isVersionMatching("26.51.6"), "SDK version 26.51.6 must match");
     check(aeris::CompatibilityManager::isVersionMatching("26.51.5"), "SDK version 26.51.5 must match");
 
     // 3. Versiones incompatibles deben ser rechazadas
@@ -44,7 +45,7 @@ void runCompatibilityTests() {
         "Incompatible version must set material hot reload to Unsupported");
 
     // 5. Inicialización con versión objetivo compatible
-    mgr.initialize("1.26.51.01", "26.51.5");
+    mgr.initialize("1.26.51.01", "26.51.6");
     check(mgr.isVersionCompatible(), "Initializing with 1.26.51.01 must set isVersionCompatible to true");
     check(mgr.detectedVersion() == "1.26.51.01", "Detected version must match 1.26.51.01");
     check(!mgr.isMaterialRedirectionSupported(), "Material redirection must start unverified on target version");
@@ -65,7 +66,7 @@ void runCompatibilityTests() {
     check(aeris::capabilityStateToString(aeris::CapabilityState::Unknown) == "Unknown", "Unknown string check");
 
         // 7. Normalizacion de versiones con sufijo git/build (1.26.51+0559ac5)
-    mgr.initialize("1.26.51+0559ac5", "26.51.5");
+    mgr.initialize("1.26.51+0559ac5", "26.51.6");
     check(mgr.isVersionCompatible(), "Version 1.26.51+0559ac5 must be recognized as compatible");
     check(mgr.detectedVersion() == "1.26.51.01", "1.26.51+0559ac5 must normalize to 1.26.51.01");
     check(mgr.rawDetectedVersion() == "1.26.51+0559ac5", "rawDetectedVersion must retain exact engine build");

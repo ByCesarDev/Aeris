@@ -3,7 +3,7 @@
 **Proyecto:** Aeris  
 **Autor:** ByCesarDev  
 **Versión Objetivo:** Minecraft Bedrock **1.26.51.01** (GDK / Windows x64)  
-**Framework de Modding:** LeviLamina Client SDK **26.51.5**  
+**Framework de Modding:** LeviLamina Client SDK **26.51.6**  
 **Fecha:** Octubre 2026  
 
 ---

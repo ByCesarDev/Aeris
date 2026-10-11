@@ -2,7 +2,7 @@
 
 **Proyecto:** Aeris  
 **Autor:** ByCesarDev  
-**Versión Objetivo Confirmada:** Minecraft Bedrock **1.26.51.01** (GDK / Windows x64) + **LeviLamina Client SDK 26.51.5**  
+**Versión Objetivo Confirmada:** Minecraft Bedrock **1.26.51.01** (GDK / Windows x64) + **LeviLamina Client SDK 26.51.6**  
 **Fecha:** Octubre 2026  
 **Referencia Base:** `RenderDragonShaderLoader` (honeymirror) + Arquitectura de UI de `Lamium` (amatouhake)
 
@@ -12,7 +12,7 @@
 
 Durante la auditoría inicial de las dependencias y la inspección del entorno del usuario:
 - **RenderDragonShaderLoader** fue diseñado originalmente para `Minecraft 1.26.40` y dependía de `levilamina 26.40.*`.
-- **La instancia real en juego es Minecraft 1.26.51.01**, y el SDK local instalado en `.xmake/packages/` es **`levilamina-client-sdk 26.51.5`**.
+- **La instancia real en juego es Minecraft 1.26.51.01**, y el SDK local instalado en `.xmake/packages/` es **`levilamina-client-sdk 26.51.6`**.
 - **Impacto directo:** Las firmas binarias (byte signatures) y los IDs de opciones gráficas internas (`OptionID 711 / 798`) de RenderDragonShaderLoader deben tratarse como **sensibles a la versión**. No podemos asumir ciegamente que las direcciones y offsets de 1.26.20/1.26.40 coincidan exactamente en 1.26.51.01 sin un verificador seguro en tiempo de ejecución (`CompatibilityManager`).
 
 ---
@@ -93,7 +93,7 @@ Durante la auditoría inicial de las dependencias y la inspección del entorno d
 
 1. **Scaffolding Limpio:**
    - Crear el árbol modular en `Aeris/`.
-   - `xmake.lua` configurado directamente con `levilamina-client-sdk 26.51.5` y el compilador del sistema (`clang-cl` LLVM 23.1).
+   - `xmake.lua` configurado directamente con `levilamina-client-sdk 26.51.6` y el compilador del sistema (`clang-cl` LLVM 23.1).
 2. **Capa de Compatibilidad (`CompatibilityManager`):**
    - Abstraer la resolución de firmas para `1.26.51.01`. Si la firma no resuelve, registrar un log claro en lugar de provocar un Access Violation.
 3. **Internacionalización Nativa:**
