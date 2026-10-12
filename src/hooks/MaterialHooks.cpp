@@ -513,8 +513,7 @@ void MaterialHooks::verifySignaturesLocked() {
 
     // Mapeo a estados de capacidad visibles
     auto const& safety = ConfigManager::getInstance().config().safety;
-    if (safety.safeMode || !safety.enableExperimentalHooks) {
-        // En modo seguro las firmas verificadas se reportan como tales pero con hooks desconectados
+    if (safety.safeMode) {
         compat.setCapabilityState(
             FeatureCapability::MaterialRedirection,
             CapabilityState::Unknown,
@@ -543,10 +542,16 @@ void MaterialHooks::verifySignaturesLocked() {
         }
 
         if (endDiag.status == SignatureStatus::Verified && reloadDiag.status == SignatureStatus::Verified) {
-            compat.setCapabilityState(FeatureCapability::MaterialHotReload, CapabilityState::Supported, "Signatures verified");
+            if (safety.enableExperimentalHotReload) {
+                compat.setCapabilityState(FeatureCapability::MaterialHotReload, CapabilityState::Supported, "Signatures verified (Hook active)");
+            } else {
+                compat.setCapabilityState(FeatureCapability::MaterialHotReload, CapabilityState::Supported, "Signatures verified (Opt-in disabled)");
+            }
         } else {
             compat.setCapabilityState(FeatureCapability::MaterialHotReload, CapabilityState::Unsupported, "cmd.info.reason.not_found");
         }
+
+        compat.setCapabilityState(FeatureCapability::GraphicsModeSwitch, CapabilityState::Supported, "Ready");
     }
 #endif
 }
@@ -627,10 +632,32 @@ bool MaterialHooks::install() {
         "Signature verified"
     );
 
-    // 6. En Etapa 3.3, endFrame, reloadMaterial y GraphicsMode se mantienen estrictamente DESACTIVADOS
-    g_endFrameTarget = nullptr;
-    g_reloadMaterial = nullptr;
-    mReloadAvailable = false;
+    // 6. Control de Hot-Reload Experimental
+    if (safety.enableExperimentalHotReload && !safety.safeMode) {
+        auto endDiag    = CompatibilityManager::getInstance().getSignatureDiagnostic("endFrame");
+        auto reloadDiag = CompatibilityManager::getInstance().getSignatureDiagnostic("reloadMaterial");
+        if (endDiag.has_value() && endDiag->status == SignatureStatus::Verified && g_endFrameTarget != nullptr &&
+            reloadDiag.has_value() && reloadDiag->status == SignatureStatus::Verified && g_reloadMaterial != nullptr) {
+            
+            ll::memory::hook(
+                g_endFrameTarget,
+                ll::memory::toFuncPtr(&endFrameDetour),
+                reinterpret_cast<ll::memory::FuncPtr*>(&g_endFrameOriginal),
+                ll::memory::HookPriority::Normal
+            );
+            if (g_endFrameOriginal != nullptr) {
+                mReloadAvailable = true;
+                logger.info("MaterialHooks: Experimental endFrame detour hooked successfully at {:#x}", reinterpret_cast<uintptr_t>(g_endFrameTarget));
+            } else {
+                logger.warn("MaterialHooks: Failed to hook endFrame; hot reload disabled");
+                mReloadAvailable = false;
+            }
+        }
+    } else {
+        g_endFrameTarget = nullptr;
+        g_reloadMaterial = nullptr;
+        mReloadAvailable = false;
+    }
 
     return true;
 

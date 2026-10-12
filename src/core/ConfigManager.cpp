@@ -171,6 +171,9 @@ bool ConfigManager::load(std::filesystem::path const& configFile) {
             if (s.contains("enableActiveMaterialOverride")) {
                 candidate.safety.enableActiveMaterialOverride = s["enableActiveMaterialOverride"].get<bool>();
             }
+            if (s.contains("enableExperimentalHotReload")) {
+                candidate.safety.enableExperimentalHotReload = s["enableExperimentalHotReload"].get<bool>();
+            }
             if (s.contains("authorizedOverrideMaterials") && s["authorizedOverrideMaterials"].is_array()) {
                 candidate.safety.authorizedOverrideMaterials = s["authorizedOverrideMaterials"].get<std::vector<std::string>>();
             }
@@ -239,6 +242,7 @@ bool ConfigManager::save() const {
         {"enablePassiveReadHook",        mConfig.safety.enablePassiveReadHook},
         {"enableMaterialRedirectDryRun",  mConfig.safety.enableMaterialRedirectDryRun},
         {"enableActiveMaterialOverride",  mConfig.safety.enableActiveMaterialOverride},
+        {"enableExperimentalHotReload",   mConfig.safety.enableExperimentalHotReload},
         {"authorizedOverrideMaterials",  mConfig.safety.authorizedOverrideMaterials}
     };
 

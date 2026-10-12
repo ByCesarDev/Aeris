@@ -35,6 +35,7 @@ struct Config {
         bool enablePassiveReadHook        = false; // Passive readFile observation hook (Etapa 3.2, disabled by default)
         bool enableMaterialRedirectDryRun = false; // Dry-run simulation of material redirection (Etapa 3.3, disabled by default)
         bool enableActiveMaterialOverride = false; // Active material substitution (Etapa 3.4, disabled by default)
+        bool enableExperimentalHotReload  = false; // Experimental endFrame + reloadMaterial hook (disabled by default)
         std::vector<std::string> authorizedOverrideMaterials = {
             "UIBlit.material.bin",
             "Cubemap.material.bin",

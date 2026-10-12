@@ -72,9 +72,27 @@ void runUiTests() {
         Screen screen;
         MockCanvas canvas;
 
+        ScreenHost host;
+        bool appliedPack = false;
+        std::string appliedName;
+        host.onApplyPack = [&](std::string const& name) {
+            appliedPack = true;
+            appliedName = name;
+        };
+        host.getDiagnostics = []() -> DiagnosticsInfo {
+            DiagnosticsInfo d{};
+            d.safeMode = false;
+            d.hookInstalled = true;
+            d.activeSubstitutions = 42;
+            d.passiveReads = 100;
+            d.materialBinReads = 50;
+            return d;
+        };
+        screen.setHost(std::move(host));
+
         std::vector<PackCardInfo> testPacks = {
-            {"SamplePack", "1.0", "AuthorA", "DescA", "Forward", true, false},
-            {"Daydream", "1.7", "AuthorB", "DescB", "Forward", false, false}
+            {"SamplePack", "1.0", "AuthorA", "DescA", "Forward", true, false, false, true},
+            {"Daydream", "1.7", "AuthorB", "DescB", "Forward", false, false, true, false}
         };
 
         screen.refreshPacksList(testPacks, "SamplePack");
@@ -89,6 +107,17 @@ void runUiTests() {
         check(canvas.fillCount > 0, "Canvas must receive fill commands");
         check(canvas.textCount > 0, "Canvas must receive text commands");
         check(canvas.flushCount > 0, "Canvas must receive flush command");
+
+        // Switch to diagnostics tab
+        // Button index 2 is Diagnostics button
+        Rect diagBtn = screen.layout().buttons[2];
+        screen.handleMouseButton(1, (diagBtn.x0 + diagBtn.x1) * 0.5f, (diagBtn.y0 + diagBtn.y1) * 0.5f, true);
+        check(screen.isDiagnosticsOpen(), "Clicking Diagnostics button must open diagnostics tab");
+        screen.render(canvas, 640.0f, 480.0f);
+
+        // Switch back to details
+        screen.handleMouseButton(1, (diagBtn.x0 + diagBtn.x1) * 0.5f, (diagBtn.y0 + diagBtn.y1) * 0.5f, true);
+        check(!screen.isDiagnosticsOpen(), "Clicking button again must return to details tab");
 
         // Toggle Master Switch
         screen.handleMouseButton(1, screen.layout().masterToggleRect.x0 + 5.0f, screen.layout().masterToggleRect.y0 + 5.0f, true);

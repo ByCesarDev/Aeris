@@ -20,6 +20,19 @@ struct PackCardInfo {
     std::string renderMode; // "Forward" or "Deferred"
     bool        isActive = false;
     bool        isVanilla = false;
+    bool        isBlockedBySafeMode = false;
+    bool        hasActiveSubstitutions = false;
+};
+
+struct DiagnosticsInfo {
+    bool        safeMode            = true;
+    bool        hookInstalled       = false;
+    bool        overrideActive      = false;
+    uint64_t    passiveReads        = 0;
+    uint64_t    materialBinReads    = 0;
+    uint64_t    activeSubstitutions = 0;
+    uint64_t    validationErrors    = 0;
+    std::string lastMaterial;
 };
 
 struct ScreenHost {
@@ -31,6 +44,7 @@ struct ScreenHost {
     std::function<bool(std::string& outPath)>    pickImportFile;
     std::function<void(std::string const& name)> onApplyPack;
     std::function<void()>                        onDisableShaders;
+    std::function<DiagnosticsInfo()>             getDiagnostics;
 };
 
 class Screen {

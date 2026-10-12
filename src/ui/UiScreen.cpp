@@ -78,7 +78,9 @@ void Screen::refreshPacksList(std::vector<PackCardInfo> packs, std::string const
         "Renderizado oficial de Minecraft sin shaders activos.",
         "Forward",
         currentActivePack.empty(),
-        true
+        true,
+        false,
+        false
     });
 
     mActivePackName = currentActivePack;
@@ -159,7 +161,7 @@ void Screen::drawHeader(Canvas& canvas, Layout const& l) {
 
     // Title & Subtitle
     canvas.text(16.0f, 8.0f, 250.0f, "AERIS  //  Shader Manager", kColTextTitle, Align::Left, 1.1f);
-    canvas.text(16.0f, 22.0f, 250.0f, "Minecraft Bedrock 1.26.51.01 Â· RenderDragon", kColTextMuted, Align::Left, 0.8f);
+    canvas.text(16.0f, 22.0f, 250.0f, "Minecraft Bedrock 1.26.51.01 | RenderDragon", kColTextMuted, Align::Left, 0.8f);
 
     // Master Shaders Toggle Button
     bool toggleHover = l.masterToggleRect.contains(mPointerX, mPointerY);
@@ -204,11 +206,22 @@ void Screen::drawPackCard(Canvas& canvas, Rect const& r, PackCardInfo const& car
     // Pack Name
     Color nameCol = card.isActive ? kColTextAccent : kColTextTitle;
     std::string displayName = card.name;
-    if (card.isActive) displayName += "  [ACTIVO]";
+    if (card.isActive) {
+        if (card.isBlockedBySafeMode) {
+            displayName += "  [MODO SEGURO]";
+            nameCol = kColTextWarning;
+        } else if (card.hasActiveSubstitutions) {
+            displayName += "  [ACTIVO EN GPU]";
+            nameCol = kColTextSuccess;
+        } else {
+            displayName += "  [SELECCIONADO]";
+            nameCol = kColTextAccent;
+        }
+    }
     canvas.text(tx, ty, r.width() - 80.0f, displayName, nameCol, Align::Left, 0.95f);
 
     // Subtitle / Details
-    std::string sub = card.renderMode + " Â· v" + card.version + " Â· " + card.author;
+    std::string sub = card.renderMode + " | v" + card.version + " | " + card.author;
     canvas.text(tx, ty + 14.0f, r.width() - 80.0f, sub, kColTextMuted, Align::Left, 0.75f);
 }
 
@@ -225,11 +238,11 @@ void Screen::drawDetailsPanel(Canvas& canvas, Layout const& l) {
     canvas.text(px, py, pw, cur.name, kColTextTitle, Align::Left, 1.15f);
     py += 18.0f;
 
-    std::string meta = "Autor: " + cur.author + "  Â·  VersiÃ³n: " + cur.version;
+    std::string meta = "Autor: " + cur.author + "  |  Version: " + cur.version;
     canvas.text(px, py, pw, meta, kColTextMuted, Align::Left, 0.85f);
     py += 16.0f;
 
-    std::string modeStr = "Modo GrÃ¡fico: " + cur.renderMode + " (GrÃ¡ficos Sofisticados)";
+    std::string modeStr = "Modo Grafico: " + cur.renderMode + " (Graficos Sofisticados)";
     canvas.text(px, py, pw, modeStr, kColTextAccent, Align::Left, 0.85f);
     py += 22.0f;
 
@@ -241,11 +254,29 @@ void Screen::drawDetailsPanel(Canvas& canvas, Layout const& l) {
     canvas.text(px, py, pw, cur.description, kColTextTitle, Align::Left, 0.85f);
     py += 40.0f;
 
-    // Status Box / Restart Notice
-    Rect noticeBox{px, py, px + pw, py + 34.0f};
-    canvas.fill(noticeBox.x0, noticeBox.y0, noticeBox.width(), noticeBox.height(), Color{0.25f, 0.18f, 0.05f, 0.85f});
-    canvas.text(px + 8.0f, py + 6.0f, pw - 16.0f, "Aviso de Rendimiento y RenderDragon:", kColTextWarning, Align::Left, 0.8f);
-    canvas.text(px + 8.0f, py + 18.0f, pw - 16.0f, "Los cambios de shader se aplicaran al reiniciar el juego.", kColTextMuted, Align::Left, 0.75f);
+    // Status Box / Real State Notice
+    Rect noticeBox{px, py, px + pw, py + 38.0f};
+    if (cur.isVanilla) {
+        canvas.fill(noticeBox.x0, noticeBox.y0, noticeBox.width(), noticeBox.height(), Color{0.12f, 0.16f, 0.20f, 0.85f});
+        canvas.text(px + 8.0f, py + 6.0f, pw - 16.0f, "Modo Vanilla (Sin Shaders):", kColTextTitle, Align::Left, 0.8f);
+        canvas.text(px + 8.0f, py + 20.0f, pw - 16.0f, "Renderizado estandar de Minecraft Bedrock sin modificaciones.", kColTextMuted, Align::Left, 0.75f);
+    } else if (cur.isActive && cur.isBlockedBySafeMode) {
+        canvas.fill(noticeBox.x0, noticeBox.y0, noticeBox.width(), noticeBox.height(), Color{0.25f, 0.18f, 0.05f, 0.85f});
+        canvas.text(px + 8.0f, py + 6.0f, pw - 16.0f, "Aviso: Modo Seguro Activado", kColTextWarning, Align::Left, 0.8f);
+        canvas.text(px + 8.0f, py + 20.0f, pw - 16.0f, "Paquete seleccionado, pero los overrides estan bloqueados por safeMode.", kColTextMuted, Align::Left, 0.75f);
+    } else if (cur.isActive && cur.hasActiveSubstitutions) {
+        canvas.fill(noticeBox.x0, noticeBox.y0, noticeBox.width(), noticeBox.height(), Color{0.05f, 0.22f, 0.10f, 0.85f});
+        canvas.text(px + 8.0f, py + 6.0f, pw - 16.0f, "Shader Activo en RenderDragon:", kColTextSuccess, Align::Left, 0.8f);
+        canvas.text(px + 8.0f, py + 20.0f, pw - 16.0f, "Materiales inyectados en memoria. Cambiar de pack requiere reiniciar mundo/juego.", kColTextMuted, Align::Left, 0.75f);
+    } else if (cur.isActive) {
+        canvas.fill(noticeBox.x0, noticeBox.y0, noticeBox.width(), noticeBox.height(), Color{0.08f, 0.18f, 0.28f, 0.85f});
+        canvas.text(px + 8.0f, py + 6.0f, pw - 16.0f, "Indice Preparado (Pendiente GPU):", kColTextAccent, Align::Left, 0.8f);
+        canvas.text(px + 8.0f, py + 20.0f, pw - 16.0f, "Nuevas solicitudes usaran este pack. GPU recargara al entrar a un mundo.", kColTextMuted, Align::Left, 0.75f);
+    } else {
+        canvas.fill(noticeBox.x0, noticeBox.y0, noticeBox.width(), noticeBox.height(), Color{0.12f, 0.14f, 0.18f, 0.85f});
+        canvas.text(px + 8.0f, py + 6.0f, pw - 16.0f, "Paquete Disponible:", kColTextMuted, Align::Left, 0.8f);
+        canvas.text(px + 8.0f, py + 20.0f, pw - 16.0f, "Haz clic en Hecho (Esc) para guardar y preparar este shaderpack.", kColTextMuted, Align::Left, 0.75f);
+    }
 }
 
 void Screen::drawDiagnosticsPanel(Canvas& canvas, Layout const& l) {
@@ -255,16 +286,33 @@ void Screen::drawDiagnosticsPanel(Canvas& canvas, Layout const& l) {
     float py = l.detailsArea.y0 + 12.0f;
     float pw = l.detailsArea.width() - 24.0f;
 
-    canvas.text(px, py, pw, "DiagnÃ³stico de Aeris", kColTextTitle, Align::Left, 1.15f);
+    canvas.text(px, py, pw, "Diagnostico de Aeris", kColTextTitle, Align::Left, 1.15f);
     py += 22.0f;
 
-    canvas.text(px, py, pw, "Estado de Hooks: Activo y Protegido", kColTextSuccess, Align::Left, 0.85f);
+    DiagnosticsInfo diag{};
+    if (mHost.getDiagnostics) {
+        diag = mHost.getDiagnostics();
+    }
+
+    std::string safeStr = diag.safeMode ? "Modo Seguro: ACTIVO (Sin modificaciones)" : "Modo Seguro: DESACTIVADO (Hooks en vivo)";
+    Color safeCol = diag.safeMode ? kColTextWarning : kColTextSuccess;
+    canvas.text(px, py, pw, safeStr, safeCol, Align::Left, 0.85f);
     py += 16.0f;
-    canvas.text(px, py, pw, "Hook readFile: Detour de memoria instalado", kColTextMuted, Align::Left, 0.85f);
+
+    std::string hookStr = "Hook readFile: " + std::string(diag.hookInstalled ? "Instalado (Activo en memoria)" : "Desconectado");
+    canvas.text(px, py, pw, hookStr, kColTextMuted, Align::Left, 0.85f);
     py += 16.0f;
-    canvas.text(px, py, pw, "Sustituciones en Memoria: Transaccional / Cero I/O", kColTextMuted, Align::Left, 0.85f);
+
+    std::string subStr = "Sustituciones Activas en Sesion: " + std::to_string(diag.activeSubstitutions);
+    canvas.text(px, py, pw, subStr, diag.activeSubstitutions > 0 ? kColTextSuccess : kColTextMuted, Align::Left, 0.85f);
     py += 16.0f;
-    canvas.text(px, py, pw, "Fallback Vanilla: Garantizado ante fallo", kColTextMuted, Align::Left, 0.85f);
+
+    std::string readsStr = "Lecturas observadas: " + std::to_string(diag.passiveReads) + " (" + std::to_string(diag.materialBinReads) + " .bin)";
+    canvas.text(px, py, pw, readsStr, kColTextMuted, Align::Left, 0.85f);
+    py += 16.0f;
+
+    std::string errStr = "Errores de validacion binaria: " + std::to_string(diag.validationErrors);
+    canvas.text(px, py, pw, errStr, diag.validationErrors > 0 ? kColTextWarning : kColTextMuted, Align::Left, 0.85f);
     py += 24.0f;
 
     canvas.fill(px, py, pw, 1.0f, kColPanelBorder);
@@ -272,9 +320,11 @@ void Screen::drawDiagnosticsPanel(Canvas& canvas, Layout const& l) {
 
     canvas.text(px, py, pw, "Materiales Activos Autorizados:", kColTextAccent, Align::Left, 0.85f);
     py += 16.0f;
-    canvas.text(px + 8.0f, py, pw, "Â· UIBlit.material.bin (UI Interface)", kColTextMuted, Align::Left, 0.8f);
+    canvas.text(px + 8.0f, py, pw, "* UIBlit.material.bin (UI Interface)", kColTextMuted, Align::Left, 0.8f);
     py += 14.0f;
-    canvas.text(px + 8.0f, py, pw, "Â· Sky.material.bin (Cielo AtmosfÃ©rico)", kColTextMuted, Align::Left, 0.8f);
+    canvas.text(px + 8.0f, py, pw, "* Cubemap.material.bin / CubemapHDRi.material.bin", kColTextMuted, Align::Left, 0.8f);
+    py += 14.0f;
+    canvas.text(px + 8.0f, py, pw, "* Sky.material.bin (Cielo Atmosferico)", kColTextMuted, Align::Left, 0.8f);
 }
 
 void Screen::drawBottomBar(Canvas& canvas, Layout const& l) {
@@ -285,7 +335,7 @@ void Screen::drawBottomBar(Canvas& canvas, Layout const& l) {
     const char* btnLabels[kMaxActionButtons] = {
         "Importar...",
         "Abrir Carpeta",
-        mShowDiagnostics ? "Ver Detalles" : "DiagnÃ³stico",
+        mShowDiagnostics ? "Ver Detalles" : "Diagnostico",
         "Hecho (Esc)"
     };
 

@@ -1,3 +1,5 @@
+#include "rendering/GraphicsModeController.h"
+#include "hooks/MaterialHooks.h"
 #include "ui/ShaderManagerScreen.h"
 #include "mod/AerisMod.h"
 #include "ui/GameCanvas.h"
@@ -140,28 +142,83 @@ ShaderManagerScreen::ShaderManagerScreen() {
 
     host.onApplyPack = [](std::string const& packName) {
         auto& configMgr = ConfigManager::getInstance();
-        configMgr.config().shaders.activePack = packName;
-        configMgr.config().safety.safeMode = false;
-        configMgr.config().safety.enableActiveMaterialOverride = true;
-        configMgr.save();
+        bool const isSafeMode = configMgr.config().safety.safeMode;
+        bool const isOverrideEnabled = configMgr.config().safety.enableActiveMaterialOverride;
 
-        ShaderPackManager::getInstance().selectPack(packName);
+        // Select the pack in the manager (saves activePack atomically and updates MaterialLoader prebuiltDirs)
+        bool const selected = ShaderPackManager::getInstance().selectPack(packName);
+
+        // Graphics Mode Coordination
+        auto const* pack = ShaderPackManager::getInstance().activePack();
+        if (pack) {
+            GraphicsModeController::applyForPack(*pack);
+        }
+
+        // Hot Reload Trigger (if experimental hot reload is enabled)
+        if (configMgr.config().safety.enableExperimentalHotReload && !isSafeMode) {
+            MaterialHooks::getInstance().queueReload();
+        }
 
         if (auto mod = ll::mod::NativeMod::current()) {
-            mod->getLogger().info("[AerisUI] Saved active shader pack: '{}'. Restart required for GPU reload.", packName);
+            if (!selected) {
+                mod->getLogger().error("[AerisUI] Failed to select pack: '{}'", packName);
+            } else if (isSafeMode) {
+                mod->getLogger().warn(
+                    "[AerisUI] Selected pack '{}', but Safe Mode is ON. Materials will NOT be overridden in RenderDragon until safeMode=false in config.",
+                    packName
+                );
+            } else if (!isOverrideEnabled) {
+                mod->getLogger().info(
+                    "[AerisUI] Selected pack '{}', but active overrides are disabled in safety config. Materials will not be substituted.",
+                    packName
+                );
+            } else {
+                mod->getLogger().info(
+                    "[AerisUI] Applied shader pack: '{}'. Material index updated for future reads. (GPU reload requires hot-reload or world/game restart).",
+                    packName
+                );
+            }
         }
     };
 
     host.onDisableShaders = []() {
-        auto& configMgr = ConfigManager::getInstance();
-        configMgr.config().shaders.activePack = "";
-        configMgr.save();
+        bool const deactivated = ShaderPackManager::getInstance().deactivatePack();
 
-        ShaderPackManager::getInstance().deactivatePack();
+        // Restore Graphics Mode to Fancy
+        GraphicsModeController::applyForward();
+
+        // Hot Reload Trigger (if experimental hot reload is enabled)
+        auto const& safety = ConfigManager::getInstance().config().safety;
+        if (safety.enableExperimentalHotReload && !safety.safeMode) {
+            MaterialHooks::getInstance().queueReload();
+        }
 
         if (auto mod = ll::mod::NativeMod::current()) {
-            mod->getLogger().info("[AerisUI] Shaders disabled (Vanilla mode). Restart required for GPU reload.");
+            if (!deactivated) {
+                mod->getLogger().warn("[AerisUI] Failed to cleanly deactivate pack");
+            } else {
+                mod->getLogger().info(
+                    "[AerisUI] Shaders deactivated (Vanilla mode). Material overrides restored to vanilla for future requests. Resident GPU materials will restore upon world re-entry or game restart."
+                );
+            }
         }
+    };
+
+    host.getDiagnostics = []() -> DiagnosticsInfo {
+        DiagnosticsInfo diag{};
+        auto const& safety = ConfigManager::getInstance().config().safety;
+        auto const& hooks  = MaterialHooks::getInstance();
+        auto const& loader = MaterialLoader::getInstance();
+
+        diag.safeMode            = safety.safeMode;
+        diag.hookInstalled       = hooks.isInstalled();
+        diag.overrideActive      = hooks.isOverrideActive();
+        diag.passiveReads        = hooks.passiveReadCount();
+        diag.materialBinReads    = hooks.materialBinReadCount();
+        diag.activeSubstitutions = loader.activeSubstitutions();
+        diag.validationErrors    = loader.validationErrors();
+        diag.lastMaterial        = loader.lastResolvedMaterial();
+        return diag;
     };
 
     mScreen.setHost(std::move(host));
@@ -185,6 +242,9 @@ void ShaderManagerScreen::refreshPacks() {
     auto const& allPacks = ShaderPackManager::getInstance().packs();
 
     std::string currentActive = ConfigManager::getInstance().config().shaders.activePack;
+    auto const& safety = ConfigManager::getInstance().config().safety;
+    bool isSafeMode = safety.safeMode;
+    bool hasSubstitutions = MaterialLoader::getInstance().activeSubstitutions() > 0;
 
     std::vector<PackCardInfo> cards;
     for (auto const& p : allPacks) {
@@ -195,7 +255,9 @@ void ShaderManagerScreen::refreshPacks() {
             p.metadata.description.empty() ? "Paquete de shaders compatible con RenderDragon." : p.metadata.description,
             p.renderMode == ShaderRenderMode::Deferred ? "Deferred" : "Forward",
             p.name == currentActive,
-            false
+            false,
+            isSafeMode && (p.name == currentActive),
+            hasSubstitutions && (p.name == currentActive)
         });
     }
 

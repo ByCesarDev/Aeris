@@ -873,18 +873,18 @@ Este checklist es la guía operativa viva de desarrollo para seguir el avance de
 
 ### 🎨 Fase 4 — Integración con RenderDragon y Hot-Reload
 
-- [ ] **Hooks de Materiales (`MaterialHooks`)**
-  - [ ] Redirección en tiempo real de `readFile` cuando el juego solicite `data/renderer/materials/*.material.bin`.
-  - [ ] Enrutamiento hacia los binarios del shader pack activo (`data/generated/<pack>/compiled/` o precompilados).
-- [ ] **Recarga en Caliente (Hot-Reload)**
-  - [ ] Hook de `endFrame` (`BgfxFrameBuilder`) para ejecución segura de `reloadMaterial`.
-  - [ ] Registro estructurado de confirmación de materiales recargados.
-- [ ] **Mecanismo de Rollback**
-  - [ ] Implementar `restoreVanilla()`: desactivación inmediata de redirecciones y restauración limpia de materiales originales de Bedrock.
-- [ ] **Control de Modo Gráfico (`GraphicsModeController`)**
-  - [ ] Detección de tipo de shader: Forward vs Deferred (`*Deferred*.material.bin`).
-  - [ ] Cambio automático del modo gráfico del juego: *Fancy* para Forward y *Vibrant Visuals/Advanced* para Deferred.
-  - [ ] Verificación de compatibilidad con hardware antes de forzar el modo.
+- [X] **Hooks de Materiales (`MaterialHooks`)**
+  - [X] Redirección en tiempo real de `readFile` cuando el juego solicite `data/renderer/materials/*.material.bin`.
+  - [X] Enrutamiento hacia los binarios del shader pack activo (`data/generated/<pack>/compiled/` o precompilados).
+- [X] **Recarga en Caliente (Hot-Reload Experimental)**
+  - [X] Hook de `endFrame` (`BgfxFrameBuilder`) para ejecución segura de `reloadMaterial` integrado bajo toggle opt-in (`safety.enableExperimentalHotReload`).
+  - [X] Registro estructurado de confirmación de materiales recargados y cola de recarga (`queueReload()`).
+- [X] **Mecanismo de Rollback**
+  - [X] Implementar `restoreVanilla()`: desactivación inmediata de redirecciones en memoria y restauración limpia de materiales originales de Bedrock, con comunicación transparente de materiales residentes en GPU.
+- [X] **Control de Modo Gráfico (`GraphicsModeController`)**
+  - [X] Detección de tipo de shader: Forward vs Deferred (`*Deferred*.material.bin`).
+  - [X] Cambio automático del modo gráfico del juego: *Fancy* para Forward y *Vibrant Visuals/Advanced* para Deferred con verificación estricta de `saveTag` ("graphics_mode", "graphics_mode_switch").
+  - [X] Verificación de compatibilidad con hardware y modo seguro antes de alterar opciones.
 
 ---
 

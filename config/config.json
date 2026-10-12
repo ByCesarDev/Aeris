@@ -23,6 +23,7 @@
         "enablePassiveReadHook": false,
         "enableMaterialRedirectDryRun": false,
         "enableActiveMaterialOverride": false,
+        "enableExperimentalHotReload": false,
         "authorizedOverrideMaterials": [
             "UIBlit.material.bin",
             "Cubemap.material.bin",
