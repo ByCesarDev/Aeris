@@ -1,0 +1,47 @@
+{
+  "namespace": "pause",
+  "aeris_shaders_button@pause.pause_button_template": {
+    "$button_text": "aeris.ui.shaders_button",
+    "$pressed_button_name": "button.aeris_open_shaders",
+    "focus_change_right": "friendsdrawer_button",
+    "anchor_to": "top_middle",
+    "anchor_from": "top_middle",
+    "button_mappings": [
+      {
+        "from_button_id": "button.menu_select",
+        "to_button_id": "$pressed_button_name",
+        "mapping_type": "pressed"
+      },
+      {
+        "from_button_id": "button.menu_ok",
+        "to_button_id": "$pressed_button_name",
+        "mapping_type": "pressed"
+      }
+    ]
+  },
+  "menu_background/button_panel": {
+    "modifications": [
+      {
+        "array_name": "controls",
+        "operation": "insert_after",
+        "control_name": "settings_button",
+        "value": {
+          "aeris_shaders_button@pause.aeris_shaders_button": {}
+        }
+      },
+      {
+        "array_name": "controls",
+        "operation": "insert_after",
+        "control_name": "aeris_shaders_button",
+        "value": {
+          "aeris_shaders_padding@pause.vertical_padding": {
+            "size": [
+              0,
+              3
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

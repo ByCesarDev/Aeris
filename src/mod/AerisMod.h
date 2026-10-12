@@ -25,6 +25,10 @@ public:
 private:
     ll::mod::NativeMod&    mSelf;
     ll::event::ListenerPtr mCommandListener;
+    ll::event::ListenerPtr mBeforeUiRenderListener;
+    ll::event::ListenerPtr mAfterUiRenderListener;
+    ll::event::ListenerPtr mMouseInputListener;
+    ll::event::ListenerPtr mKeyInputListener;
 };
 
 } // namespace aeris

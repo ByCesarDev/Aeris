@@ -79,6 +79,14 @@ target("Aeris")
             os.mkdir(configDst)
             os.cp(configSrc, path.join(configDst, "config.json"))
         end
+
+        -- Copiar paquete de recursos para botón en Menú de Pausa (resources/ -> resource_packs/Aeris-ui/)
+        local resSrc = path.join(os.projectdir(), "resources")
+        if os.isdir(resSrc) then
+            local resDst = path.join(binDir, "resource_packs", "Aeris-ui")
+            os.tryrm(resDst)
+            os.cp(resSrc, resDst)
+        end
     end)
 
 target("AerisTests")
@@ -102,5 +110,7 @@ target("AerisTests")
         "src/optimization/PerformanceManager.cpp",
         "src/shaders/ShaderPackParser.cpp",
         "src/shaders/ShaderPackManager.cpp",
-        "src/shaders/MaterialLoader.cpp"
+        "src/shaders/MaterialLoader.cpp",
+        "src/ui/UiLayout.cpp",
+        "src/ui/UiScreen.cpp"
     )

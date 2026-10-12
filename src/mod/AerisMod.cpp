@@ -8,8 +8,16 @@
 #include "ll/api/command/CommandRegistrar.h"
 #include "ll/api/event/EventBus.h"
 #include "ll/api/event/command/ClientCommandRegisterEvent.h"
+#include "ll/api/event/input/KeyInputEvent.h"
+#include "ll/api/event/input/MouseInputEvent.h"
+#include "ll/api/event/render/UIRenderEvent.h"
 #include "ll/api/mod/RegisterHelper.h"
+#include "ll/api/service/TargetedBedrock.h"
 
+#include "mc/client/game/ClientInstance.h"
+#include "mc/client/gui/GuiData.h"
+#include "mc/client/gui/screens/ScreenView.h"
+#include "mc/deps/input/MouseAction.h"
 #include "mc/server/commands/CommandOrigin.h"
 #include "mc/server/commands/CommandOutput.h"
 #include "mc/server/commands/CommandPermissionLevel.h"
@@ -21,6 +29,8 @@
 #include "optimization/PerformanceManager.h"
 #include "shaders/MaterialLoader.h"
 #include "shaders/ShaderPackManager.h"
+#include "ui/PauseMenuHooks.h"
+#include "ui/ShaderManagerScreen.h"
 
 namespace aeris {
 
@@ -84,10 +94,6 @@ bool AerisMod::load() {
     // 4. Inicializar subsistema de rendimiento (sin métricas simuladas)
     PerformanceManager::getInstance().initialize();
 
-    // NOTA: Siguiendo la arquitectura oficial de LeviLamina y el patrón canónico
-    // de referencia (RenderDragonShaderLoader), la suscripción a eventos de juego
-    // no se realiza durante load(), sino en enable().
-
     logger.info("Aeris loaded successfully [Language: {}, Detected: {}, Compatible: {}]",
         ConfigManager::getInstance().config().language,
         CompatibilityManager::getInstance().rawDetectedVersion().empty() ?
@@ -110,13 +116,13 @@ bool AerisMod::enable() {
     auto const& savedPack = ConfigManager::getInstance().config().shaders.activePack;
     if (!savedPack.empty()) {
         if (ShaderPackManager::getInstance().selectPack(savedPack)) {
-            logger.info("Restored active shader pack: '{}'", savedPack);
+            logger.info("Restored active shader pack: \x27{}\x27", savedPack);
         } else {
-            logger.warn("Saved active pack '{}' not found during startup scan", savedPack);
+            logger.warn("Saved active pack \x27{}\x27 not found during startup scan", savedPack);
         }
     }
 
-    // 2. Comprobar instalación de hooks nativos (bloqueados por defecto en modo seguro)
+    // 2. Comprobar instalación de hooks nativos
     try {
         MaterialHooks::getInstance().install();
     } catch (std::exception const& e) {
@@ -125,9 +131,81 @@ bool AerisMod::enable() {
         logger.error("Unknown exception during MaterialHooks verification/install");
     }
 
-    // 3. Suscribir ClientCommandRegisterEvent dentro de enable() según el patrón de RenderDragonShaderLoader
-    logger.info("Installing ClientCommandRegisterEvent listener...");
+    // 3. Instalar hooks de interfaz y botón en menú de pausa
+    try {
+        ui::installNativeUiSuppressHooks();
+        ui::installPauseMenuHooks();
+    } catch (std::exception const& e) {
+        logger.error("Exception installing UI hooks: {}", e.what());
+    }
+
     auto& bus = ll::event::EventBus::getInstance();
+
+    // Render pass hook: toma el control durante la pantalla de diálogo reservada de Aeris
+    mBeforeUiRenderListener = bus.emplaceListener<ll::event::render::BeforeUIRenderEvent>(
+        [](ll::event::render::BeforeUIRenderEvent& event) {
+            auto& view   = event.screenView();
+            auto& screen = ui::ShaderManagerScreen::getInstance();
+            if (!ui::isOurUiPass(view)) return;
+            event.cancel();
+            screen.setPointer(view.mPointerLocationPrevious->x, view.mPointerLocationPrevious->y);
+            screen.render(event.uiRenderContext(), view.mSize->x, view.mSize->y);
+        }
+    );
+
+    mAfterUiRenderListener = bus.emplaceListener<ll::event::render::AfterUIRenderEvent>(
+        [](ll::event::render::AfterUIRenderEvent& event) {
+            ui::ShaderManagerScreen::getInstance().afterFrame(event.uiRenderContext());
+        }
+    );
+
+    // Entrada de ratón sincronizada con coordenadas GUI
+    mMouseInputListener = bus.emplaceListener<ll::event::input::MouseInputEvent>(
+        [](ll::event::input::MouseInputEvent& event) {
+            auto& screen = ui::ShaderManagerScreen::getInstance();
+            int const action = event.actionButtonId();
+            if (action == MouseAction::ActionMove || action == MouseAction::ActionMoveRelative) return;
+            bool const wheel = action == MouseAction::ActionWheel;
+            if (wheel && event.buttonData() == 0) return;
+            bool const down = wheel || event.buttonData() == MouseAction::DataDown;
+
+            float invScale = 1.0f;
+            if (auto client = ll::service::getClientInstance()) {
+                invScale = client->getGuiData()->mInvGuiScale;
+            }
+
+            if (screen.handleMouse(action, static_cast<float>(event.x()) * invScale, static_cast<float>(event.y()) * invScale, down, wheel ? event.buttonData() : 0)) {
+                event.cancel();
+            }
+        }
+    );
+
+    // Tecla rápida G (0x47) y captura de teclado cuando la UI está abierta
+    mKeyInputListener = bus.emplaceListener<ll::event::input::KeyInputEvent>(
+        [](ll::event::input::KeyInputEvent& event) {
+            auto& screen = ui::ShaderManagerScreen::getInstance();
+            int const key = event.keyCode();
+            bool const down = event.isDown();
+
+            if (key == 0x47) { // VK_G
+                static bool hotkeyHeld = false;
+                if (down && !hotkeyHeld) {
+                    if (screen.visible()) screen.close();
+                    else screen.open();
+                }
+                hotkeyHeld = down;
+                event.cancel();
+                return;
+            }
+
+            if (!screen.visible()) return;
+            if (down) screen.handleKey(key);
+            event.cancel();
+        }
+    );
+
+    // 4. Suscribir ClientCommandRegisterEvent dentro de enable()
+    logger.info("Installing ClientCommandRegisterEvent listener...");
     mCommandListener = bus.emplaceListener<ll::event::command::ClientCommandRegisterEvent>(
         [](ll::event::command::ClientCommandRegisterEvent&) {
             auto& modLogger = AerisMod::getInstance().getSelf().getLogger();
@@ -151,11 +229,20 @@ bool AerisMod::enable() {
                 cmd.overload().text("help").execute([](CommandOrigin const&, CommandOutput& output) {
                     output.success(tr("cmd.help.header"));
                     output.success(tr("cmd.help.aeris"));
+                    output.success(tr("cmd.help.ui"));
                     output.success(tr("cmd.help.scan"));
                     output.success(tr("cmd.help.list"));
                     output.success(tr("cmd.help.rollback"));
                     output.success(tr("cmd.help.info"));
                     output.success(tr("cmd.help.version"));
+                });
+
+                // /aeris ui
+                cmd.overload().text("ui").execute([](CommandOrigin const&, CommandOutput& output) {
+                    auto& screen = ui::ShaderManagerScreen::getInstance();
+                    if (screen.visible()) screen.close();
+                    else screen.open();
+                    output.success(tr("cmd.ui.opened"));
                 });
 
                 // /aeris scan
@@ -219,16 +306,13 @@ bool AerisMod::enable() {
 
                     auto const& hooks = MaterialHooks::getInstance();
 
-                    // 1. Capacidad Técnica (firmas en binario)
                     auto redirState  = compat.getCapabilityState(FeatureCapability::MaterialRedirection);
                     auto redirReason = compat.getCapabilityReason(FeatureCapability::MaterialRedirection);
                     output.success(trFormat("cmd.info.materialRedirection", {formatCapabilityDisplay(redirState, redirReason)}));
 
-                    // 2. Estado del Hook Nativo
                     std::string hookDisplay = hooks.isInstalled() ? tr("cmd.info.hook.installed") : tr("cmd.info.hook.detached");
                     output.success(trFormat("cmd.info.hookStatus", {hookDisplay}));
 
-                    // 3. Estado de Redirección Operativo
                     std::string redirStatusDisplay;
                     if (!hooks.isInstalled()) {
                         redirStatusDisplay = tr("cmd.info.redir.detached");
@@ -243,7 +327,6 @@ bool AerisMod::enable() {
                     }
                     output.success(trFormat("cmd.info.redirectStatus", {redirStatusDisplay}));
 
-                    // 4. Telemetría de Lecturas
                     if (hooks.isInstalled()) {
                         if (hooks.isOverrideActive()) {
                             output.success(trFormat("cmd.info.telemetryActive", {
@@ -285,7 +368,7 @@ bool AerisMod::enable() {
         }
     );
 
-    logger.info("Aeris enabled successfully");
+    logger.info("Aeris enabled successfully with Iris Shaders GUI and Pause Menu button");
     return true;
 }
 
@@ -297,9 +380,30 @@ bool AerisMod::disable() {
     MaterialHooks::getInstance().restoreVanilla();
     MaterialHooks::getInstance().uninstall();
 
-    // 2. Liberar suscripción a comandos de forma limpia
+    // 2. Desenganchar hooks de UI y menús
+    ui::uninstallPauseMenuHooks();
+    ui::uninstallNativeUiSuppressHooks();
+
+    // 3. Liberar suscripciones a eventos de forma limpia
+    auto& bus = ll::event::EventBus::getInstance();
+    if (mKeyInputListener) {
+        bus.removeListener(mKeyInputListener);
+        mKeyInputListener.reset();
+    }
+    if (mMouseInputListener) {
+        bus.removeListener(mMouseInputListener);
+        mMouseInputListener.reset();
+    }
+    if (mAfterUiRenderListener) {
+        bus.removeListener(mAfterUiRenderListener);
+        mAfterUiRenderListener.reset();
+    }
+    if (mBeforeUiRenderListener) {
+        bus.removeListener(mBeforeUiRenderListener);
+        mBeforeUiRenderListener.reset();
+    }
     if (mCommandListener) {
-        ll::event::EventBus::getInstance().removeListener(mCommandListener);
+        bus.removeListener(mCommandListener);
         mCommandListener.reset();
     }
 

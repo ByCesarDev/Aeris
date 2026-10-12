@@ -154,5 +154,7 @@
     "cmd.info.redirectStatus": "Redirection State: {0}",
     "cmd.info.hook.installed": "§aInstalled§r",
     "cmd.info.hook.detached": "§eDetached§r",
-    "cmd.info.telemetryActive": "Active Telemetry: {0} reads ({1} .material.bin, {2} substituted, {3} validation errors)"
+    "cmd.info.telemetryActive": "Active Telemetry: {0} reads ({1} .material.bin, {2} substituted, {3} validation errors)",
+    "cmd.help.ui": "/aeris ui - Open or toggle Shader Manager GUI",
+    "cmd.ui.opened": "Aeris Shader Manager toggled"
 }

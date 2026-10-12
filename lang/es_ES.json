@@ -154,5 +154,7 @@
     "cmd.info.redirectStatus": "Estado de Redirección: {0}",
     "cmd.info.hook.installed": "§aInstalado§r",
     "cmd.info.hook.detached": "§eDesconectado§r",
-    "cmd.info.telemetryActive": "Telemetría Activa: {0} lecturas ({1} .material.bin, {2} sustituidos, {3} errores de validación)"
+    "cmd.info.telemetryActive": "Telemetría Activa: {0} lecturas ({1} .material.bin, {2} sustituidos, {3} errores de validación)",
+    "cmd.help.ui": "/aeris ui - Abrir o alternar interfaz de shaders",
+    "cmd.ui.opened": "Interfaz de shaders de Aeris alternada"
 }
