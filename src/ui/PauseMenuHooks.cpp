@@ -27,7 +27,14 @@ constexpr auto kConsumeAndRefreshFocus = static_cast<::ui::ViewRequest>(
 void ensurePauseButtonHandler(MinecraftScreenController& ctrl) {
     if (!gRegisteredControllers.insert(&ctrl).second) return;
 
+    if (auto mod = ll::mod::NativeMod::current()) {
+        mod->getLogger().info("[AerisUI] Registering button handler for '{}' on controller {:p}", kButtonOpenShaders, static_cast<void*>(&ctrl));
+    }
+
     ctrl.registerButtonPressedHandler(ctrl._getNameId(std::string(kButtonOpenShaders)), [](UIPropertyBag*) {
+        if (auto mod = ll::mod::NativeMod::current()) {
+            mod->getLogger().info("[AerisUI] Pause menu button '{}' pressed! Opening ShaderManagerScreen...", kButtonOpenShaders);
+        }
         ShaderManagerScreen::getInstance().open();
         return kConsumeAndRefreshFocus;
     });
@@ -42,18 +49,37 @@ LL_TYPE_INSTANCE_HOOK(
     &PauseScreenController::$onOpen,
     void
 ) {
+    if (auto mod = ll::mod::NativeMod::current()) {
+        mod->getLogger().info("[AerisUI] PauseScreenController::$onOpen called for controller {:p}", static_cast<void*>(this));
+    }
     origin();
     ensurePauseButtonHandler(*this);
 }
 
+LL_TYPE_INSTANCE_HOOK(
+    PauseScreenTerminateHook,
+    ll::memory::HookPriority::Normal,
+    PauseScreenController,
+    &PauseScreenController::$onTerminate,
+    void
+) {
+    if (auto mod = ll::mod::NativeMod::current()) {
+        mod->getLogger().info("[AerisUI] PauseScreenController::$onTerminate called for controller {:p} - cleaning up", static_cast<void*>(this));
+    }
+    gRegisteredControllers.erase(this);
+    origin();
+}
+
 void installPauseMenuHooks() {
     PauseScreenOpenHook::hook();
+    PauseScreenTerminateHook::hook();
     if (auto mod = ll::mod::NativeMod::current()) {
-        mod->getLogger().info("[AerisUI] Pause menu button hook installed successfully");
+        mod->getLogger().info("[AerisUI] Pause menu button hooks installed successfully (Open + Terminate)");
     }
 }
 
 void uninstallPauseMenuHooks() {
+    PauseScreenTerminateHook::unhook();
     PauseScreenOpenHook::unhook();
     gRegisteredControllers.clear();
 }

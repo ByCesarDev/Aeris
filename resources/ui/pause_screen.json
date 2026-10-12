@@ -26,18 +26,19 @@
         "operation": "insert_after",
         "control_name": "settings_button",
         "value": {
-          "aeris_shaders_button@pause.aeris_shaders_button": {}
-        }
-      },
-      {
-        "array_name": "controls",
-        "operation": "insert_after",
-        "control_name": "aeris_shaders_button",
-        "value": {
-          "aeris_shaders_padding@pause.vertical_padding": {
-            "size": [
-              0,
-              3
+          "aeris_shaders_section": {
+            "type": "stack_panel",
+            "orientation": "vertical",
+            "size": [ "100%", "100%c" ],
+            "controls": [
+              {
+                "aeris_shaders_padding_top@pause.vertical_padding": {
+                  "size": [ 0, 3 ]
+                }
+              },
+              {
+                "aeris_shaders_button@pause.aeris_shaders_button": {}
+              }
             ]
           }
         }
