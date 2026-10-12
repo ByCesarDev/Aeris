@@ -129,7 +129,7 @@
     "cmd.help.scan": "/aeris scan - Rescan data/shaderpacks/ folder",
     "cmd.help.list": "/aeris list - List all discovered shader packs",
     "cmd.help.rollback": "/aeris rollback - Deactivate shaders and restore vanilla materials",
-    "cmd.rollback.success": "Shader materials deactivated. Vanilla materials restored.",
+    "cmd.rollback.success": "Shader materials deactivated for subsequent reads. (Materials already loaded in GPU require world reload or client restart).",
     "cmd.rollback.already_vanilla": "No shader pack is currently active. Already using vanilla materials.",
     "cmd.info.materialRedirection": "Redirection Capability: {0}",
     "cmd.info.hotReload": "Material Hot Reload: {0}",

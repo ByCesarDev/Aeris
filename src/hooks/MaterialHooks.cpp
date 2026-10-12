@@ -237,10 +237,29 @@ void MaterialHooks::tryApplyMaterialOverride(std::string* ret, std::string_view 
         return;
     }
 
-    // 4. Sustitución efectiva de bytes en memoria (cero syscalls a disco)
+    // 4. Sustitución transaccional de bytes en memoria (rollback garantizado ante fallo)
     size_t vanillaSize = ret->size();
-    ret->assign(reinterpret_cast<const char*>(entry->binaryData.data()), entry->binaryData.size());
-    MaterialLoader::getInstance().recordActiveSubstitution();
+    std::string vanillaBackup;
+    try {
+        vanillaBackup = *ret; // Respaldar búfer vanilla exacto
+        ret->assign(reinterpret_cast<const char*>(entry->binaryData.data()), entry->binaryData.size());
+        MaterialLoader::getInstance().recordActiveSubstitution();
+    } catch (std::exception const& ex) {
+        try {
+            *ret = std::move(vanillaBackup); // Restaurar estado vanilla ante cualquier excepción
+        } catch (...) {
+            // Protección máxima contra fallo secundario
+        }
+        MaterialLoader::getInstance().recordValidationError();
+        if (auto mod = ll::mod::NativeMod::current()) {
+            mod->getLogger().error(
+                "[MaterialOverride] Exception during substitution of '{}': {}; restored vanilla buffer",
+                pathStr,
+                ex.what()
+            );
+        }
+        return;
+    }
 
     static std::atomic<int> sLoggedOverrides{0};
     if (sLoggedOverrides.fetch_add(1) < 5) {

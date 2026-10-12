@@ -38,7 +38,8 @@ struct Config {
         std::vector<std::string> authorizedOverrideMaterials = {
             "UIBlit.material.bin",
             "Cubemap.material.bin",
-            "CubemapHDRi.material.bin"
+            "CubemapHDRi.material.bin",
+            "Sky.material.bin"
         };
     } safety;
 };
