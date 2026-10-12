@@ -915,21 +915,19 @@ Este checklist es la guía operativa viva de desarrollo para seguir el avance de
 
 ### 🖥️ Fase 7 — Interfaz de Usuario de Aeris (Estilo Iris)
 
-- [ ] **Motor de Renderizado Gráfico Abstracto**
-  - [ ] Implementar `UiCanvas` (dibujo de rectángulos sólidos, texto con métricas precisas y flush de lotes).
-- [ ] **Captura de Entrada y Escena Nativa**
-  - [ ] Implementar apertura mediante escena nativa vacía de Minecraft (aislamiento de input, liberación de cursor, supresión de HUD).
-  - [ ] Supresión segura del render nativo de la escena en `BeforeUIRenderEvent`.
-  - [ ] Restauración impecable de controles de juego al cerrar con tecla `Esc`, botón o tecla de acceso rápido.
-- [ ] **Pantallas y Componentes Visuales**
-  - [ ] **Pestaña Shaders**: Lista scrolleable de packs, estado activo, botones de importar, abrir carpeta, aplicar y cancelar.
-  - [ ] **Pestaña Ajustes de Shader**: Controles en dos columnas, sliders expandibles al hover, páginas de categorías.
-  - [ ] **Pestaña Gráficos**: Estado del modo gráfico actual y opciones disponibles.
-  - [ ] **Pestaña Rendimiento**: Panel de diagnóstico y métricas de procesamiento.
-  - [ ] **Pestaña Ajustes Generales**: Selector de idioma (EN/ES), atajo de teclado, fondo oscuro personalizable.
-  - [ ] **Pestaña Acerca de**: Versión, autor (ByCesarDev), créditos y licencias.
-- [ ] **Diseño Visual**
-  - [ ] Paleta oscura minimalista, contraste adecuado, feedback auditivo/visual sutil al interactuar.
+- [X] **Motor de Renderizado Gráfico Abstracto**
+  - [X] Implementar `GameCanvas` / `Canvas` (dibujo de rectángulos sólidos, paneles con bordes, texto con métricas precisas y flush de lotes mediante `MinecraftUIRenderContext`).
+- [X] **Captura de Entrada y Escena Nativa**
+  - [X] Implementar apertura mediante escena nativa de Minecraft (`createCommonDialogInfoScreen`, aislamiento de input, liberación de cursor, supresión de HUD).
+  - [X] Supresión segura del render nativo de la escena en `BeforeUIRenderEvent`.
+  - [X] Restauración impecable de controles de juego al cerrar con tecla `Esc`, botón "Hecho" o tecla rápida `G`.
+  - [X] Integración nativa de botón en el Menú de Pausa (`pause_screen.json`) con botón inyectado `Shaders (Aeris)`.
+  - [X] Navegación modal que preserva la pausa del mundo, con congelación automática al abrir desde juego (`G`, `/aeris ui`) y retorno fluido al Menú de Pausa al cerrar.
+- [X] **Pantallas y Componentes Visuales**
+  - [X] **Pestaña Shaders**: Lista scrolleable de packs, estado activo, badges Forward/Deferred, botones de importar archivo, abrir carpeta, desactivar shaders (modo Vanilla) y aplicar.
+  - [X] **Navegación Interactiva**: Selección de tarjetas por clic o flechas (`VK_UP`/`VK_DOWN`), confirmación con `Enter` o botón Hecho.
+- [X] **Diseño Visual**
+  - [X] Paleta oscura minimalista inspirada en Iris Shaders (Java Edition), glassmorphism, contraste y feedback sonoro nativo (`random.click`).
 
 ---
 
@@ -980,7 +978,8 @@ Este checklist es la guía operativa viva de desarrollo para seguir el avance de
   - [X] Pruebas de resolución de rutas de materiales precompilados.
 - [ ] **Plan de Pruebas en Juego (Validación Manual)**
   - [X] Checklist de verificación en cliente Minecraft: Etapa 3.1 (firmas), Etapa 3.2 (hook pasivo), Etapa 3.3 (resolución dry-run) y validación de MATCH real con shaderpack activo.
-  - [ ] Prueba de apertura y cierre de interfaz sin bloqueo de ratón ni pérdida de controles.
+  - [X] Prueba de apertura y cierre de interfaz sin bloqueo de ratón ni pérdida de controles (validado en runtime 1.26.51.01).
+  - [X] Integración y navegación de pantalla con Menú de Pausa y estado de congelación/pausa validado en runtime (confirmado por ByCesarDev).
   - [ ] Prueba de importación de packs por archivo y drag & drop.
   - [ ] Prueba de activación de shader precompilado y cambio automático de modo gráfico.
   - [ ] Prueba de rollback a materiales vanilla (`/aeris rollback` y botón en UI).

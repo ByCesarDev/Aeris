@@ -18,6 +18,7 @@
 
 #include "mc/client/game/ClientInstance.h"
 #include "mc/client/game/IClientInstance.h"
+#include "mc/client/gui/SceneType.h"
 #include "mc/client/gui/screens/AbstractScene.h"
 #include "mc/client/gui/screens/SceneFactory.h"
 #include "mc/client/gui/screens/SceneStack.h"
@@ -222,6 +223,12 @@ void ShaderManagerScreen::open() {
     bool schedule = false;
     {
         std::lock_guard lock(mMutex);
+        if (auto mod = ll::mod::NativeMod::current()) {
+            mod->getLogger().info(
+                "[AerisUI] [2/4] ShaderManagerScreen::open() requested (visible={}, mOpenRequested={}, mScene={:p}, mWantPopScene={})",
+                mScreen.visible(), mOpenRequested, static_cast<void*>(mScene.get()), mWantPopScene
+            );
+        }
         if (mScreen.visible() || mOpenRequested || mOpenScheduled || mScene || mWantPopScene) {
             return;
         }
@@ -232,7 +239,12 @@ void ShaderManagerScreen::open() {
 
     if (schedule) {
         refreshPacks();
-        ll::thread::ClientThreadExecutor::getDefault().execute([this] { openOnClientThread(); });
+        auto client = ll::service::getClientInstance();
+        if (client) {
+            openOnClientThread();
+        } else {
+            ll::thread::ClientThreadExecutor::getDefault().execute([this] { openOnClientThread(); });
+        }
     }
 }
 
@@ -255,6 +267,9 @@ void ShaderManagerScreen::close() {
 void ShaderManagerScreen::openOnClientThread() {
     std::lock_guard lock(mMutex);
     mOpenScheduled = false;
+    if (auto mod = ll::mod::NativeMod::current()) {
+        mod->getLogger().info("[AerisUI] openOnClientThread executing (mOpenRequested={}, mScreen.visible={})", mOpenRequested, mScreen.visible());
+    }
     if (!mOpenRequested || mScreen.visible() || mScene || mWantPopScene) return;
 
     IClientInstance* client = mClient;
@@ -288,7 +303,37 @@ void ShaderManagerScreen::pushPlaceholderScene(IClientInstance& client) {
         return;
     }
 
+    std::string screensBefore;
+    for (auto const& name : stack->getScreenNames()) {
+        if (!screensBefore.empty()) screensBefore += ", ";
+        screensBefore += name;
+    }
+    if (auto mod = ll::mod::NativeMod::current()) {
+        mod->getLogger().info("[AerisUI] pushPlaceholderScene: current SceneStack screens before push: [{}]", screensBefore);
+    }
+
+    // Check if the pause screen is already in the SceneStack
+    bool const hasPauseScreen = stack->isOnSceneStack(::ui::SceneType::PauseScene)
+                             || stack->isOnSceneStack("pause_screen");
+
+    // If opened from gameplay (e.g. via hotkey 'G' or '/aeris ui') and not already paused,
+    // push the native pause screen first to freeze the game world, then push our GUI immediately on top.
+    bool const inWorld = (client.getLocalPlayer() != nullptr) || stack->isOnSceneStack("hud_screen");
+    if (inWorld && !hasPauseScreen) {
+        auto pauseScene = client.getSceneFactory().createPauseScreen(false);
+        if (pauseScene) {
+            if (auto mod = ll::mod::NativeMod::current()) {
+                mod->getLogger().info("[AerisUI] Pushing underlying pause_screen to freeze game world before opening shaders GUI");
+            }
+            stack->pushScreen(pauseScene, false);
+        }
+    }
+
     stack->pushScreen(mScene, false);
+
+    if (auto mod = ll::mod::NativeMod::current()) {
+        mod->getLogger().info("[AerisUI] pushPlaceholderScene: placeholder scene pushed ({:p})", static_cast<void*>(mScene.get()));
+    }
 }
 
 void ShaderManagerScreen::popPlaceholderScene() {
@@ -305,7 +350,12 @@ void ShaderManagerScreen::popPlaceholderScene() {
         mPopRetries   = 0;
     }
 
-    ll::thread::ClientThreadExecutor::getDefault().execute([this, scene] { popOnClientThread(scene); });
+    auto client = ll::service::getClientInstance();
+    if (client) {
+        popOnClientThread(scene);
+    } else {
+        ll::thread::ClientThreadExecutor::getDefault().execute([this, scene] { popOnClientThread(scene); });
+    }
 }
 
 void ShaderManagerScreen::popOnClientThread(std::shared_ptr<AbstractScene> scene) {
@@ -372,6 +422,9 @@ void ShaderManagerScreen::notifyPlaceholderScenePopped(AbstractScene const* scen
     std::lock_guard lock(mMutex);
     if (scene == nullptr || mScene.get() != scene) return;
 
+    if (auto mod = ll::mod::NativeMod::current()) {
+        mod->getLogger().info("[AerisUI] notifyPlaceholderScenePopped {:p}", static_cast<void const*>(scene));
+    }
     mRetiredScene  = std::move(mScene);
     mOpenRequested = false;
     mOpenScheduled = false;
@@ -441,6 +494,15 @@ LL_TYPE_INSTANCE_HOOK(
     ::FrameRenderObject const& renderObj
 ) {
     bool const ours = ShaderManagerScreen::getInstance().isPlaceholderScene(this);
+    if (ours) {
+        static bool sLoggedRenderFirst = false;
+        if (!sLoggedRenderFirst) {
+            sLoggedRenderFirst = true;
+            if (auto mod = ll::mod::NativeMod::current()) {
+                mod->getLogger().info("[AerisUI] [3/4] Minecraft actively rendering placeholder scene {:p} on screen!", static_cast<void*>(this));
+            }
+        }
+    }
     ScreenView* const viewBefore = gOurScreenView;
     gOurScreenView               = ours ? mScreenView.get() : nullptr;
     origin(screenContext, renderObj);
@@ -457,6 +519,11 @@ LL_TYPE_INSTANCE_HOOK(
     bool doScreenTransitions
 ) {
     bool const ours = ShaderManagerScreen::getInstance().isPlaceholderScene(this);
+    if (ours) {
+        if (auto mod = ll::mod::NativeMod::current()) {
+            mod->getLogger().info("[AerisUI] Placeholder scene {:p} entered (isRevisiting={})", static_cast<void*>(this), isRevisiting);
+        }
+    }
     origin(isRevisiting, ours ? false : doScreenTransitions);
 }
 
@@ -471,6 +538,11 @@ LL_TYPE_INSTANCE_HOOK(
     ::std::shared_ptr<::AbstractScene> pushedScene
 ) {
     bool const ours = ShaderManagerScreen::getInstance().isPlaceholderScene(this);
+    if (ours) {
+        if (auto mod = ll::mod::NativeMod::current()) {
+            mod->getLogger().info("[AerisUI] Placeholder scene {:p} exited (isPopping={})", static_cast<void*>(this), isPopping);
+        }
+    }
     origin(isPopping, ours ? false : doScreenTransitions, std::move(pushedScene));
     if (ours && isPopping) {
         ShaderManagerScreen::getInstance().notifyPlaceholderScenePopped(this);

@@ -8,6 +8,7 @@
 #include "ll/api/memory/Hook.h"
 #include "ll/api/mod/NativeMod.h"
 
+#include "mc/client/gui/DirtyFlag.h"
 #include "mc/client/gui/ViewRequest.h"
 #include "mc/client/gui/controls/UIPropertyBag.h"
 #include "mc/client/gui/screens/controllers/MinecraftScreenController.h"
@@ -20,9 +21,6 @@ namespace {
 std::unordered_set<MinecraftScreenController*> gRegisteredControllers;
 
 constexpr std::string_view kButtonOpenShaders = "button.aeris_open_shaders";
-constexpr auto kConsumeAndRefreshFocus = static_cast<::ui::ViewRequest>(
-    static_cast<uint>(::ui::ViewRequest::ConsumeEvent) | static_cast<uint>(::ui::ViewRequest::DelayedFocusRefresh)
-);
 
 void ensurePauseButtonHandler(MinecraftScreenController& ctrl) {
     if (!gRegisteredControllers.insert(&ctrl).second) return;
@@ -31,12 +29,23 @@ void ensurePauseButtonHandler(MinecraftScreenController& ctrl) {
         mod->getLogger().info("[AerisUI] Registering button handler for '{}' on controller {:p}", kButtonOpenShaders, static_cast<void*>(&ctrl));
     }
 
-    ctrl.registerButtonPressedHandler(ctrl._getNameId(std::string(kButtonOpenShaders)), [](UIPropertyBag*) {
+    ctrl.registerButtonPressedHandler(ctrl._getNameId(std::string(kButtonOpenShaders)), [&ctrl](UIPropertyBag*) {
         if (auto mod = ll::mod::NativeMod::current()) {
-            mod->getLogger().info("[AerisUI] Pause menu button '{}' pressed! Opening ShaderManagerScreen...", kButtonOpenShaders);
+            mod->getLogger().info(
+                "[AerisUI] [1/4] Pause menu button '{}' pressed on controller {:p}! Opening ShaderManagerScreen on top of pause menu...",
+                kButtonOpenShaders,
+                static_cast<void*>(&ctrl)
+            );
         }
+
+        // Suspend pause menu input so it doesn't process clicks while the shaders screen is open
+        ctrl.setSuspendInput(true);
+
+        // Open ShaderManagerScreen directly on top of the pause screen (keeps world paused)
         ShaderManagerScreen::getInstance().open();
-        return kConsumeAndRefreshFocus;
+
+        // Consume the button click event without leaving or exiting the pause screen
+        return ::ui::ViewRequest::ConsumeEvent;
     });
 }
 
@@ -57,6 +66,19 @@ LL_TYPE_INSTANCE_HOOK(
 }
 
 LL_TYPE_INSTANCE_HOOK(
+    PauseScreenTickHook,
+    ll::memory::HookPriority::Normal,
+    PauseScreenController,
+    &PauseScreenController::$tick,
+    ::ui::DirtyFlag
+) {
+    // Keep pause menu input suspended while ShaderManagerScreen is open on top of it,
+    // and automatically restore input the instant ShaderManagerScreen closes.
+    setSuspendInput(ShaderManagerScreen::getInstance().visible());
+    return origin();
+}
+
+LL_TYPE_INSTANCE_HOOK(
     PauseScreenTerminateHook,
     ll::memory::HookPriority::Normal,
     PauseScreenController,
@@ -64,7 +86,7 @@ LL_TYPE_INSTANCE_HOOK(
     void
 ) {
     if (auto mod = ll::mod::NativeMod::current()) {
-        mod->getLogger().info("[AerisUI] PauseScreenController::$onTerminate called for controller {:p} - cleaning up", static_cast<void*>(this));
+        mod->getLogger().info("[AerisUI] [4/4] PauseScreenController::$onTerminate called for controller {:p} - cleaning up", static_cast<void*>(this));
     }
     gRegisteredControllers.erase(this);
     origin();
@@ -72,14 +94,16 @@ LL_TYPE_INSTANCE_HOOK(
 
 void installPauseMenuHooks() {
     PauseScreenOpenHook::hook();
+    PauseScreenTickHook::hook();
     PauseScreenTerminateHook::hook();
     if (auto mod = ll::mod::NativeMod::current()) {
-        mod->getLogger().info("[AerisUI] Pause menu button hooks installed successfully (Open + Terminate)");
+        mod->getLogger().info("[AerisUI] Pause menu button hooks installed successfully (Open + Tick + Terminate)");
     }
 }
 
 void uninstallPauseMenuHooks() {
     PauseScreenTerminateHook::unhook();
+    PauseScreenTickHook::unhook();
     PauseScreenOpenHook::unhook();
     gRegisteredControllers.clear();
 }
