@@ -57,9 +57,12 @@ bool MaterialLoader::validateMaterialBinary(std::span<const uint8_t> data, std::
 }
 
 bool MaterialLoader::isMaterialAuthorized(std::string_view canonicalName) {
+    if (canonicalName.empty()) {
+        return false;
+    }
     auto const& authList = ConfigManager::getInstance().config().safety.authorizedOverrideMaterials;
     for (auto const& auth : authList) {
-        if (canonicalName == auth) {
+        if (auth == "*" || auth == "*.*" || auth == "*.material.bin" || canonicalName == auth) {
             return true;
         }
     }

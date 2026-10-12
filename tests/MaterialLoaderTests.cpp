@@ -1,5 +1,6 @@
 #include "TestRunner.h"
 #include "shaders/MaterialLoader.h"
+#include "core/ConfigManager.h"
 
 #include <filesystem>
 #include <fstream>
@@ -271,6 +272,17 @@ void runMaterialLoaderTests() {
         "Cubemap.material.bin must be authorized in default whitelist");
     check(!aeris::MaterialLoader::isMaterialAuthorized("UnauthorizedShaders.material.bin"),
         "Unauthorized material must be rejected by whitelist");
+
+    // Comprobación de comodín asterisco ('*')
+    {
+        auto origList = aeris::ConfigManager::getInstance().config().safety.authorizedOverrideMaterials;
+        aeris::ConfigManager::getInstance().config().safety.authorizedOverrideMaterials.push_back("*");
+        check(aeris::MaterialLoader::isMaterialAuthorized("UnauthorizedShaders.material.bin"),
+            "Wildcard '*' must authorize any material including UnauthorizedShaders");
+        check(aeris::MaterialLoader::isMaterialAuthorized("RenderChunk.material.bin"),
+            "Wildcard '*' must authorize RenderChunk.material.bin");
+        aeris::ConfigManager::getInstance().config().safety.authorizedOverrideMaterials = origList;
+    }
 
     // Métricas y contadores de la Etapa 3.4
     check(loader.activeSubstitutions() == 0, "Initial activeSubstitutions must be 0");
